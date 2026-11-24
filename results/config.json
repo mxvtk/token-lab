@@ -1,0 +1,45 @@
+{
+  "label": "config",
+  "rows": [
+    {
+      "task": 1,
+      "input_tokens": 7776,
+      "output_tokens": 728,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 8504
+    },
+    {
+      "task": 2,
+      "input_tokens": 9504,
+      "output_tokens": 572,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 10076
+    },
+    {
+      "task": 3,
+      "input_tokens": 4032,
+      "output_tokens": 468,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 4500
+    },
+    {
+      "task": 4,
+      "input_tokens": 10224,
+      "output_tokens": 832,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 11056
+    },
+    {
+      "task": 5,
+      "input_tokens": 11856,
+      "output_tokens": 936,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 12792
+    }
+  ],
+  "totals": {
+    "input_tokens": 43392,
+    "output_tokens": 3536,
+    "total_tokens": 46928
+  }
+}

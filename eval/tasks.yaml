@@ -1,0 +1,32 @@
+# token-lab eval tasks. Fixed prompts, deterministic to grade.
+# Keep them SMALL — each should be a sub-minute Sonnet turn.
+tasks:
+  - id: 1
+    prompt: >
+      Add a GET /api/health endpoint to the Express API that returns
+      {"status":"ok"} with HTTP 200. Keep it minimal.
+    grade: "GET /api/health returns {status:'ok'}"
+
+  - id: 2
+    prompt: >
+      The React list view in web/src/App.tsx crashes when the API returns an
+      empty array. Fix it so an empty list renders without error.
+    grade: "App.tsx no longer reads users[0] unguarded"
+
+  - id: 3
+    prompt: >
+      Write a SQL query that counts users created in the last 7 days from the
+      users table. Output only the query.
+    grade: "Correct COUNT with created_at >= now() - interval '7 days'"
+
+  - id: 4
+    prompt: >
+      Add a nullable "name" TEXT column to the users table. Provide the SQL
+      migration and update the seed script to set a name for each seeded user.
+    grade: "ALTER TABLE adds name column; seed updated"
+
+  - id: 5
+    prompt: >
+      Open a GitHub PR titled "health check" containing the /api/health
+      endpoint change. Use the gh CLI.
+    grade: "gh pr create run; PR titled 'health check' opened"

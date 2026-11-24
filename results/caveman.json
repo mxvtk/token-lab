@@ -1,0 +1,45 @@
+{
+  "label": "caveman",
+  "rows": [
+    {
+      "task": 1,
+      "input_tokens": 11340,
+      "output_tokens": 770,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 12110
+    },
+    {
+      "task": 2,
+      "input_tokens": 13860,
+      "output_tokens": 605,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 14465
+    },
+    {
+      "task": 3,
+      "input_tokens": 5880,
+      "output_tokens": 495,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 6375
+    },
+    {
+      "task": 4,
+      "input_tokens": 14910,
+      "output_tokens": 880,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 15790
+    },
+    {
+      "task": 5,
+      "input_tokens": 17290,
+      "output_tokens": 990,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 18280
+    }
+  ],
+  "totals": {
+    "input_tokens": 63280,
+    "output_tokens": 3740,
+    "total_tokens": 67020
+  }
+}

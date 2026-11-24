@@ -1,0 +1,45 @@
+{
+  "label": "headroom",
+  "rows": [
+    {
+      "task": 1,
+      "input_tokens": 11664,
+      "output_tokens": 1372,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 13036
+    },
+    {
+      "task": 2,
+      "input_tokens": 14256,
+      "output_tokens": 1078,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 15334
+    },
+    {
+      "task": 3,
+      "input_tokens": 6048,
+      "output_tokens": 882,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 6930
+    },
+    {
+      "task": 4,
+      "input_tokens": 15336,
+      "output_tokens": 1568,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 16904
+    },
+    {
+      "task": 5,
+      "input_tokens": 17784,
+      "output_tokens": 1764,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 19548
+    }
+  ],
+  "totals": {
+    "input_tokens": 65088,
+    "output_tokens": 6664,
+    "total_tokens": 71752
+  }
+}

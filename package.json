@@ -1,0 +1,16 @@
+{
+  "name": "token-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Workshop sandbox: minimize LLM token spend when coding with AI agents.",
+  "scripts": {
+    "eval": "tsx eval/run.ts",
+    "scoreboard": "tsx eval/scoreboard.ts",
+    "preflight": "bash preflight.sh"
+  },
+  "devDependencies": {
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "label": "cli",
+  "rows": [
+    {
+      "task": 1,
+      "input_tokens": 5346,
+      "output_tokens": 700,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 6046
+    },
+    {
+      "task": 2,
+      "input_tokens": 6534,
+      "output_tokens": 550,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 7084
+    },
+    {
+      "task": 3,
+      "input_tokens": 2772,
+      "output_tokens": 450,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 3222
+    },
+    {
+      "task": 4,
+      "input_tokens": 7029,
+      "output_tokens": 800,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 7829
+    },
+    {
+      "task": 5,
+      "input_tokens": 8151,
+      "output_tokens": 900,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 9051
+    }
+  ],
+  "totals": {
+    "input_tokens": 29832,
+    "output_tokens": 3400,
+    "total_tokens": 33232
+  }
+}

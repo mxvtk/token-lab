@@ -1,0 +1,45 @@
+{
+  "label": "baseline",
+  "rows": [
+    {
+      "task": 1,
+      "input_tokens": 16200,
+      "output_tokens": 1400,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 17600
+    },
+    {
+      "task": 2,
+      "input_tokens": 19800,
+      "output_tokens": 1100,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 20900
+    },
+    {
+      "task": 3,
+      "input_tokens": 8400,
+      "output_tokens": 900,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 9300
+    },
+    {
+      "task": 4,
+      "input_tokens": 21300,
+      "output_tokens": 1600,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 22900
+    },
+    {
+      "task": 5,
+      "input_tokens": 24700,
+      "output_tokens": 1800,
+      "cache_read_input_tokens": 0,
+      "total_tokens": 26500
+    }
+  ],
+  "totals": {
+    "input_tokens": 90400,
+    "output_tokens": 6800,
+    "total_tokens": 97200
+  }
+}

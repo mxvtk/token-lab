@@ -1,0 +1,10 @@
+# Reference .claudeignore for Section 4. Copy to repo root as `.claudeignore`.
+# Keeps the agent from reading (and paying for) files it never needs.
+node_modules/
+dist/
+build/
+*.lock
+package-lock.json
+results/
+*.log
+.git/

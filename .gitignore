@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
+
+# Scratch files left in the working tree during scaffolding. The real
+# .claudeignore is created by participants in Section 4; it is tracked on the
+# after/config branch, so ignoring it here keeps `main` as a clean "before".
+_t
+.claudeignore

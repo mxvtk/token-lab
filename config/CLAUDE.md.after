@@ -1,0 +1,31 @@
+# token-lab — reference CLAUDE.md (the "after" for Section 4)
+
+> The repo intentionally ships WITHOUT a root CLAUDE.md. In Section 4 participants
+> create one. This file is the reference answer — the facilitator stages it on
+> the `after/config` branch. Copy it to the repo root as `CLAUDE.md`.
+
+## What this is
+Full-stack TS sandbox for a token-spend workshop. FE (Vite/React) + API (Express) + Postgres, all in Docker.
+
+## How to run things — ALWAYS via Docker, never locally
+- Start everything: `docker compose up -d`
+- API logs: `docker compose logs -f api`
+- Reseed DB: `docker compose exec api npm run seed`
+- Query DB: `docker compose exec db psql -U tokenlab -d tokenlab`
+- Run the eval: `npm run eval -- --label <name> --task <id>`
+
+## Layout
+- `api/src/index.ts` — Express routes. Add endpoints here.
+- `api/src/seed.ts` — schema + seed data.
+- `web/src/App.tsx` — the React list/detail view.
+- `eval/` — the token eval runner and tasks.
+
+## Conventions
+- API routes are prefixed `/api`.
+- Keep changes minimal and focused; small diffs.
+- TypeScript strict mode is on.
+
+## Don't read / don't touch (saves tokens)
+- Do not read `node_modules/`, build output, or lockfiles.
+- Do not read `results/*.json` — generated eval output.
+- Default model is Sonnet. Do not switch to Opus.
