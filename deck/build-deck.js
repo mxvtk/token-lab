@@ -331,8 +331,8 @@ leverSlide(2, "Caveman plugin", PURPLE_L, "Demo",
   ["Enable the plugin; re-run a task", "Eyeball before / after: same result, shorter answers", "Savings land on the output line only — check the total too"],
   "Attacks: verbose model output. Its own ruleset is extra context on every turn.");
 leverSlide(3, "Config", GREEN, "Hands-on",
-  "A tight project config stops the agent re-discovering the repo every session. Highest leverage, lowest effort.",
-  ["Write a lean CLAUDE.md: commands, conventions, where things live", "Add ignore rules: node_modules, build output, lockfiles", "The agent stops paying the 're-learn the repo' tax"],
+  "A tight project config stops the agent re-discovering the repo every session. Lowest effort — measure what it saves on your repo.",
+  ["Write a lean CLAUDE.md: commands, conventions, where things live", "Deny reads of generated output, fixtures, lockfiles (permissions.deny — Claude Code ignores .claudeignore)", "The agent stops paying the 're-learn the repo' tax"],
   "Attacks: poor defaults and reading the wrong files.");
 leverSlide(4, "CLI over MCP", YELLOW, "Hands-on",
   "MCP servers inject tool schemas into context every turn. For known tools, a plain CLI call is far cheaper.",
@@ -429,10 +429,14 @@ title(s, "What the numbers say");
     .map((k) => ({ k, ab: abRow(k), off: resultTotal(`${k}__off`), on: resultTotal(`${k}__on`) }))
     .filter((r) => r.ab.win).sort((a, b) => (b.off.total - b.on.total) / b.off.total - (a.off.total - a.on.total) / a.off.total);
   const cfg = pair("config");
+  // Same "within noise" rule as the scoreboard, and the range instead of a bare %:
+  // one facilitator run on one task is not a promise for anyone else's repo.
+  const rng = (t) => `${t.min.toLocaleString()}–${t.max.toLocaleString()}`;
+  const cfgT = { off: resultTotal("config__off"), on: resultTotal("config__on") };
   cards.push(cfg.ab.meta && cfg.off && cfg.on ? {
-    head: winners[0]?.k === "config" ? "Config: the biggest win" : "Config",
-    big: `${cfg.ab.pct} fewer`, color: cfg.ab.win ? GREEN : MUTE,
-    body: `${cfg.ab.off} → ${cfg.ab.on} tokens; agent turns ${cfg.off.turns} → ${cfg.on.turns}. It stopped re-learning the repo.`,
+    head: cfg.ab.noise ? "Config: within noise" : winners[0]?.k === "config" ? "Config: biggest win in our run" : "Config",
+    big: cfg.ab.noise ? `${cfg.ab.pct} (noise)` : `${cfg.ab.pct} fewer`, color: cfg.ab.win ? GREEN : MUTE,
+    body: `Task ${cfg.ab.meta.tasks}, n=${cfg.ab.meta.reps}: ${rng(cfgT.off)} → ${rng(cfgT.on)} tokens, turns ${cfg.off.turns} → ${cfg.on.turns}. Facilitator run — yours may vary.`,
   } : { head: "Config", ...MISSING });
   const cv = pair("caveman");
   cards.push(cv.ab.meta && cv.off && cv.on ? {
@@ -476,14 +480,18 @@ title(s, "What the numbers say");
   if (HR_ROWS.length) {
     const best = [...HR_ROWS].sort((a, b) => (b.off.total - b.on.total) / b.off.total - (a.off.total - a.on.total) / a.off.total)[0];
     const anyWin = HR_ROWS.some((r) => r.ab.win);
+    // A row where ON cost more and the ranges don't overlap is a real loss, not noise —
+    // the card must lead with it rather than with the best (noise-level) row.
+    const losses = HR_ROWS.filter((r) => !r.ab.noise && r.on.total > r.off.total);
+    const worst = [...losses].sort((a, b) => (a.off.total - a.on.total) / a.off.total - (b.off.total - b.on.total) / b.off.total)[0];
     const proxySaved = HR_ROWS.reduce((a, r) => a + (r.proxy.saved ?? 0), 0);
     const pipeRuns = HR_ROWS.every((r) => r.proxy.runs != null) ? HR_ROWS.reduce((a, r) => a + r.proxy.runs, 0) : null;
     const proxyLine = pipeRuns != null
       ? `Proxy compressed ${Math.round(proxySaved).toLocaleString()} tokens over ${pipeRuns} requests it inspected.`
       : `Proxy's own /metrics: ${Math.round(proxySaved).toLocaleString()} tokens compressed.`;
     cards.push({
-      head: anyWin ? `Headroom: best on the ${best.name}` : proxySaved === 0 ? "Headroom: nothing to squeeze here" : "Headroom: within noise here",
-      big: `${chg(best.off.total, best.on.total)} tokens`, color: anyWin ? GREEN : MUTE,
+      head: anyWin ? `Headroom: best on the ${best.name}` : worst ? `Headroom: the ${worst.name} cost more` : proxySaved === 0 ? "Headroom: nothing to squeeze here" : "Headroom: within noise here",
+      big: `${chg((anyWin || !worst ? best : worst).off.total, (anyWin || !worst ? best : worst).on.total)} tokens`, color: anyWin ? GREEN : MUTE,
       body: `${HR_ROWS.map((r) => `${r.name} ${chg(r.off.total, r.on.total)}${r.ab.noise ? "*" : ""}`).join(", ")} (* = noise). ${proxyLine}`,
     });
   } else {

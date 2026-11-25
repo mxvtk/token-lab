@@ -1,0 +1,95 @@
+{
+  "scoreboard": {
+    "rows": [
+      {
+        "label": "Headroom",
+        "off": "147,817",
+        "on": "147,575",
+        "saved": "242 (0%)*",
+        "win": false
+      },
+      {
+        "label": "Headroom (long answer)",
+        "off": "79,025",
+        "on": "78,616",
+        "saved": "409 (1%)*",
+        "win": false
+      },
+      {
+        "label": "Headroom (long chat)",
+        "off": "697,365",
+        "on": "788,095",
+        "saved": "-90,730 (-13%)",
+        "win": false
+      },
+      {
+        "label": "Caveman",
+        "off": "148,586",
+        "on": "158,357",
+        "saved": "-9,771 (-7%)",
+        "win": false
+      },
+      {
+        "label": "Caveman (long answer)",
+        "off": "78,479",
+        "on": "82,344",
+        "saved": "-3,865 (-5%)*",
+        "win": false
+      },
+      {
+        "label": "Caveman (long chat)",
+        "off": "785,964",
+        "on": "821,363",
+        "saved": "-35,399 (-5%)*",
+        "win": false
+      },
+      {
+        "label": "Config",
+        "off": "147,398",
+        "on": "111,548",
+        "saved": "35,850 (24%)",
+        "win": true
+      },
+      {
+        "label": "CLI vs MCP",
+        "off": "147,822",
+        "on": "147,624",
+        "saved": "198 (0%)*",
+        "win": false
+      }
+    ],
+    "footnote": "Total tokens (input + output + cache read + cache write), median of 3 runs per side; Headroom, Caveman, Config, CLI vs MCP = task 1 (small edit); Headroom (long answer), Caveman (long answer) = task 6 (written code review, no edits); Headroom (long chat), Caveman (long chat) = task 7 (6-message conversation in one session).  Headroom = traffic routed through headroom proxy (Bedrock passthrough to the local gateway), --mode token, --no-optimize vs optimizing.  * OFF and ON ranges overlap — within run-to-run noise."
+  },
+  "findings": [
+    {
+      "head": "Config: biggest win in our run",
+      "big": "24% fewer",
+      "body": "Task 1, n=3: 146,660–148,224 → 111,195–111,746 tokens, turns 4 → 3. Facilitator run — yours may vary."
+    },
+    {
+      "head": "Caveman: shorter answers…",
+      "big": "−27% output",
+      "body": "…but total tokens +7%: its ruleset is extra context on every turn."
+    },
+    {
+      "head": "Caveman in a long chat",
+      "big": "−24% output",
+      "body": "Tokens +5%: output is only 0.7% of a long chat's tokens."
+    },
+    {
+      "head": "Long chats live on the prompt cache",
+      "big": "94% cache reads",
+      "body": "Reads bill at 1/10 of input: $0.55 per 6-message chat cached vs $2.49 uncached (−78%), Sonnet list price. Keep the prefix stable; compact, don't restart."
+    },
+    {
+      "head": "CLI vs MCP: within noise",
+      "big": "0%",
+      "body": "Both MCP servers connected, yet their schemas didn't move the total on this task."
+    },
+    {
+      "head": "Headroom: the chat cost more",
+      "big": "+13% tokens",
+      "body": "edit 0%*, review −1%*, chat +13% (* = noise). Proxy compressed 43,790 tokens over 85 requests it inspected."
+    }
+  ]
+}

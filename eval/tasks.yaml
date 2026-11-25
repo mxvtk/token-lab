@@ -24,6 +24,9 @@ tasks:
       Add a nullable "name" TEXT column to the users table. Provide the SQL
       migration and update the seed script to set a name for each seeded user.
     grade: "ALTER TABLE adds name column; seed updated"
+    # Noisy: one run measured 255k–375k tokens across 3 reps on the same config.
+    # 5 reps by default so the median means something (--reps / EVAL_REPS override).
+    reps: 5
 
   # opt_in: output-heavy (a written review, no edits) — the case output
   # compression is built for. Not in the default batch; the Caveman A/B runs it

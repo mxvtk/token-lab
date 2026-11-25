@@ -7,8 +7,9 @@
 ## What this is
 Full-stack TS sandbox for a token-spend workshop. FE (Vite/React) + API (Express) + Postgres, all in Docker.
 
-## How to run things — ALWAYS via Docker, never locally
-- Start everything: `docker compose up -d`
+## How to run things — Docker by default
+- Start everything: `docker compose up -d` (without Docker: your own api on
+  :3001 + Postgres on :5432 works; use `psql` directly instead of `docker compose exec`)
 - API logs: `docker compose logs -f api`
 - Reseed DB: `docker compose exec api npm run seed`
 - Query DB: `docker compose exec db psql -U tokenlab -d tokenlab`
@@ -27,5 +28,7 @@ Full-stack TS sandbox for a token-spend workshop. FE (Vite/React) + API (Express
 
 ## Don't read / don't touch (saves tokens)
 - Do not read `node_modules/`, build output, or lockfiles.
-- Do not read `results/*.json` — generated eval output.
+- Do not read `results/` — generated eval output (prior runs' answers and diffs).
+  Enforced by `permissions.deny` in `.claude/settings.json` (reference:
+  `config/settings.json.after`). Claude Code does not read `.claudeignore`.
 - Default model is Sonnet. Do not switch to Opus.

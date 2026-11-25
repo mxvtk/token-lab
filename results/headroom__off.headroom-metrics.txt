@@ -1,0 +1,274 @@
+# proxy --mode token, compression pipeline ran on 0 requests
+# /metrics before
+# HELP headroom_requests_total Total number of requests
+# TYPE headroom_requests_total counter
+headroom_requests_total 0
+
+# HELP headroom_requests_cached_total Cached request count
+# TYPE headroom_requests_cached_total counter
+headroom_requests_cached_total 0
+
+# HELP headroom_requests_rate_limited_total Requests rejected with 429, by who rejected them (headroom=our own limiter, upstream=the provider)
+# TYPE headroom_requests_rate_limited_total counter
+headroom_requests_rate_limited_total{source="headroom"} 0
+headroom_requests_rate_limited_total{source="upstream"} 0
+
+# HELP headroom_requests_failed_total Requests that failed upstream (4xx and 5xx, excluding 429), by provider
+# TYPE headroom_requests_failed_total counter
+headroom_requests_failed_total{provider="unknown"} 0
+
+# HELP headroom_inbound_requests_total All inbound HTTP requests accepted by the proxy
+# TYPE headroom_inbound_requests_total counter
+headroom_inbound_requests_total 2
+
+# HELP headroom_inbound_requests_completed_total Inbound HTTP requests completed or aborted by the proxy
+# TYPE headroom_inbound_requests_completed_total counter
+headroom_inbound_requests_completed_total 1
+
+# HELP headroom_inbound_requests_active Inbound HTTP requests currently active in the proxy
+# TYPE headroom_inbound_requests_active gauge
+headroom_inbound_requests_active 1
+
+# HELP headroom_tokens_input_total Total input tokens
+# TYPE headroom_tokens_input_total counter
+headroom_tokens_input_total 0
+
+# HELP headroom_tokens_output_total Total output tokens
+# TYPE headroom_tokens_output_total counter
+headroom_tokens_output_total 0
+
+# HELP headroom_tokens_saved_total Tokens saved by optimization
+# TYPE headroom_tokens_saved_total counter
+headroom_tokens_saved_total 0
+
+# HELP headroom_persistent_savings_requests_total Durable lifetime requests recorded by the proxy savings tracker
+# TYPE headroom_persistent_savings_requests_total counter
+headroom_persistent_savings_requests_total 141
+
+# HELP headroom_persistent_savings_tokens_saved_total Durable lifetime input tokens saved by proxy compression
+# TYPE headroom_persistent_savings_tokens_saved_total counter
+headroom_persistent_savings_tokens_saved_total 0
+
+# HELP headroom_persistent_savings_input_tokens_total Durable lifetime input tokens recorded by the proxy savings tracker
+# TYPE headroom_persistent_savings_input_tokens_total counter
+headroom_persistent_savings_input_tokens_total 0
+
+# HELP headroom_persistent_savings_input_cost_usd_total Durable lifetime input spend in USD estimated by the proxy savings tracker
+# TYPE headroom_persistent_savings_input_cost_usd_total counter
+headroom_persistent_savings_input_cost_usd_total 0.0
+
+# HELP headroom_persistent_savings_compression_savings_usd_total Durable lifetime compression savings in USD estimated by the proxy savings tracker
+# TYPE headroom_persistent_savings_compression_savings_usd_total counter
+headroom_persistent_savings_compression_savings_usd_total 0.0
+
+# HELP headroom_latency_ms_sum Sum of request latencies in milliseconds
+# TYPE headroom_latency_ms_sum counter
+headroom_latency_ms_sum 0.0
+
+# HELP headroom_latency_ms_count Count of observed request latencies
+# TYPE headroom_latency_ms_count counter
+headroom_latency_ms_count 0
+
+# HELP headroom_latency_ms_min Minimum observed request latency in milliseconds
+# TYPE headroom_latency_ms_min gauge
+headroom_latency_ms_min 0
+
+# HELP headroom_latency_ms_max Maximum observed request latency in milliseconds
+# TYPE headroom_latency_ms_max gauge
+headroom_latency_ms_max 0.0
+
+# HELP headroom_overhead_ms_sum Sum of Headroom processing overhead in milliseconds
+# TYPE headroom_overhead_ms_sum counter
+headroom_overhead_ms_sum 0.0
+
+# HELP headroom_overhead_ms_count Count of observed Headroom overhead samples
+# TYPE headroom_overhead_ms_count counter
+headroom_overhead_ms_count 0
+
+# HELP headroom_overhead_ms_min Minimum observed Headroom overhead in milliseconds
+# TYPE headroom_overhead_ms_min gauge
+headroom_overhead_ms_min 0
+
+# HELP headroom_overhead_ms_max Maximum observed Headroom overhead in milliseconds
+# TYPE headroom_overhead_ms_max gauge
+headroom_overhead_ms_max 0.0
+
+# HELP headroom_ttfb_ms_sum Sum of time to first byte in milliseconds
+# TYPE headroom_ttfb_ms_sum counter
+headroom_ttfb_ms_sum 0.0
+
+# HELP headroom_ttfb_ms_count Count of observed time-to-first-byte samples
+# TYPE headroom_ttfb_ms_count counter
+headroom_ttfb_ms_count 0
+
+# HELP headroom_ttfb_ms_min Minimum observed time to first byte in milliseconds
+# TYPE headroom_ttfb_ms_min gauge
+headroom_ttfb_ms_min 0
+
+# HELP headroom_ttfb_ms_max Maximum observed time to first byte in milliseconds
+# TYPE headroom_ttfb_ms_max gauge
+headroom_ttfb_ms_max 0.0
+
+# HELP headroom_cache_bust_total Requests that lost provider cache efficiency because of compression
+# TYPE headroom_cache_bust_total counter
+headroom_cache_bust_total 0
+
+# HELP headroom_cache_bust_tokens_lost_total Tokens that lost provider cache discount because of compression
+# TYPE headroom_cache_bust_tokens_lost_total counter
+headroom_cache_bust_tokens_lost_total 0
+
+# HELP headroom_requests_by_provider Requests by provider
+# TYPE headroom_requests_by_provider counter
+
+# HELP headroom_requests_by_model Requests by model
+# TYPE headroom_requests_by_model counter
+
+# HELP headroom_active_ws_sessions Active Codex WebSocket sessions
+# TYPE headroom_active_ws_sessions gauge
+headroom_active_ws_sessions 0
+
+# HELP headroom_active_relay_tasks Active Codex WS relay tasks
+# TYPE headroom_active_relay_tasks gauge
+headroom_active_relay_tasks 0
+
+# HELP proxy_image_generation_call_log_redacted_total Count of base64-encoded image payloads redacted from request logs by the Python proxy's request logger
+# TYPE proxy_image_generation_call_log_redacted_total counter
+proxy_image_generation_call_log_redacted_total 0
+
+# /metrics after
+# HELP headroom_requests_total Total number of requests
+# TYPE headroom_requests_total counter
+headroom_requests_total 12
+
+# HELP headroom_requests_cached_total Cached request count
+# TYPE headroom_requests_cached_total counter
+headroom_requests_cached_total 0
+
+# HELP headroom_requests_rate_limited_total Requests rejected with 429, by who rejected them (headroom=our own limiter, upstream=the provider)
+# TYPE headroom_requests_rate_limited_total counter
+headroom_requests_rate_limited_total{source="headroom"} 0
+headroom_requests_rate_limited_total{source="upstream"} 0
+
+# HELP headroom_requests_failed_total Requests that failed upstream (4xx and 5xx, excluding 429), by provider
+# TYPE headroom_requests_failed_total counter
+headroom_requests_failed_total{provider="unknown"} 0
+
+# HELP headroom_inbound_requests_total All inbound HTTP requests accepted by the proxy
+# TYPE headroom_inbound_requests_total counter
+headroom_inbound_requests_total 18
+
+# HELP headroom_inbound_requests_completed_total Inbound HTTP requests completed or aborted by the proxy
+# TYPE headroom_inbound_requests_completed_total counter
+headroom_inbound_requests_completed_total 17
+
+# HELP headroom_inbound_requests_active Inbound HTTP requests currently active in the proxy
+# TYPE headroom_inbound_requests_active gauge
+headroom_inbound_requests_active 1
+
+# HELP headroom_tokens_input_total Total input tokens
+# TYPE headroom_tokens_input_total counter
+headroom_tokens_input_total 0
+
+# HELP headroom_tokens_output_total Total output tokens
+# TYPE headroom_tokens_output_total counter
+headroom_tokens_output_total 0
+
+# HELP headroom_tokens_saved_total Tokens saved by optimization
+# TYPE headroom_tokens_saved_total counter
+headroom_tokens_saved_total 0
+
+# HELP headroom_persistent_savings_requests_total Durable lifetime requests recorded by the proxy savings tracker
+# TYPE headroom_persistent_savings_requests_total counter
+headroom_persistent_savings_requests_total 153
+
+# HELP headroom_persistent_savings_tokens_saved_total Durable lifetime input tokens saved by proxy compression
+# TYPE headroom_persistent_savings_tokens_saved_total counter
+headroom_persistent_savings_tokens_saved_total 0
+
+# HELP headroom_persistent_savings_input_tokens_total Durable lifetime input tokens recorded by the proxy savings tracker
+# TYPE headroom_persistent_savings_input_tokens_total counter
+headroom_persistent_savings_input_tokens_total 0
+
+# HELP headroom_persistent_savings_input_cost_usd_total Durable lifetime input spend in USD estimated by the proxy savings tracker
+# TYPE headroom_persistent_savings_input_cost_usd_total counter
+headroom_persistent_savings_input_cost_usd_total 0.0
+
+# HELP headroom_persistent_savings_compression_savings_usd_total Durable lifetime compression savings in USD estimated by the proxy savings tracker
+# TYPE headroom_persistent_savings_compression_savings_usd_total counter
+headroom_persistent_savings_compression_savings_usd_total 0.0
+
+# HELP headroom_latency_ms_sum Sum of request latencies in milliseconds
+# TYPE headroom_latency_ms_sum counter
+headroom_latency_ms_sum 10365.1
+
+# HELP headroom_latency_ms_count Count of observed request latencies
+# TYPE headroom_latency_ms_count counter
+headroom_latency_ms_count 12
+
+# HELP headroom_latency_ms_min Minimum observed request latency in milliseconds
+# TYPE headroom_latency_ms_min gauge
+headroom_latency_ms_min 702.46
+
+# HELP headroom_latency_ms_max Maximum observed request latency in milliseconds
+# TYPE headroom_latency_ms_max gauge
+headroom_latency_ms_max 1016.17
+
+# HELP headroom_overhead_ms_sum Sum of Headroom processing overhead in milliseconds
+# TYPE headroom_overhead_ms_sum counter
+headroom_overhead_ms_sum 0.0
+
+# HELP headroom_overhead_ms_count Count of observed Headroom overhead samples
+# TYPE headroom_overhead_ms_count counter
+headroom_overhead_ms_count 0
+
+# HELP headroom_overhead_ms_min Minimum observed Headroom overhead in milliseconds
+# TYPE headroom_overhead_ms_min gauge
+headroom_overhead_ms_min 0
+
+# HELP headroom_overhead_ms_max Maximum observed Headroom overhead in milliseconds
+# TYPE headroom_overhead_ms_max gauge
+headroom_overhead_ms_max 0.0
+
+# HELP headroom_ttfb_ms_sum Sum of time to first byte in milliseconds
+# TYPE headroom_ttfb_ms_sum counter
+headroom_ttfb_ms_sum 0.0
+
+# HELP headroom_ttfb_ms_count Count of observed time-to-first-byte samples
+# TYPE headroom_ttfb_ms_count counter
+headroom_ttfb_ms_count 0
+
+# HELP headroom_ttfb_ms_min Minimum observed time to first byte in milliseconds
+# TYPE headroom_ttfb_ms_min gauge
+headroom_ttfb_ms_min 0
+
+# HELP headroom_ttfb_ms_max Maximum observed time to first byte in milliseconds
+# TYPE headroom_ttfb_ms_max gauge
+headroom_ttfb_ms_max 0.0
+
+# HELP headroom_cache_bust_total Requests that lost provider cache efficiency because of compression
+# TYPE headroom_cache_bust_total counter
+headroom_cache_bust_total 0
+
+# HELP headroom_cache_bust_tokens_lost_total Tokens that lost provider cache discount because of compression
+# TYPE headroom_cache_bust_tokens_lost_total counter
+headroom_cache_bust_tokens_lost_total 0
+
+# HELP headroom_requests_by_provider Requests by provider
+# TYPE headroom_requests_by_provider counter
+headroom_requests_by_provider{provider="bedrock"} 12
+
+# HELP headroom_requests_by_model Requests by model
+# TYPE headroom_requests_by_model counter
+headroom_requests_by_model{model="claude-sonnet-4-6"} 12
+
+# HELP headroom_active_ws_sessions Active Codex WebSocket sessions
+# TYPE headroom_active_ws_sessions gauge
+headroom_active_ws_sessions 0
+
+# HELP headroom_active_relay_tasks Active Codex WS relay tasks
+# TYPE headroom_active_relay_tasks gauge
+headroom_active_relay_tasks 0
+
+# HELP proxy_image_generation_call_log_redacted_total Count of base64-encoded image payloads redacted from request logs by the Python proxy's request logger
+# TYPE proxy_image_generation_call_log_redacted_total counter
+proxy_image_generation_call_log_redacted_total 0

@@ -103,7 +103,7 @@ else
 fi
 
 step "6. Claude auth"
-if claude -p "reply with: ok" --output-format json </dev/null 2>/dev/null | grep -q '"is_error":false'; then
+if claude -p "reply with: ok" --output-format json </dev/null 2>/dev/null | node scripts/claude-ok.mjs; then
   ok "claude is logged in"
 else
   warn "claude NOT logged in — run 'claude' and sign in (the eval can't record real numbers without this)"

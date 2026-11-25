@@ -5,8 +5,10 @@
 set -e
 git checkout -b after/config
 cp config/CLAUDE.md.after CLAUDE.md
-cp config/claudeignore.after .claudeignore
+mkdir -p .claude
+cp config/settings.json.after .claude/settings.json
 git add -A
-git commit -m "after(config): tight CLAUDE.md + .claudeignore for Section 4"
+git add -f .claude/settings.json   # gitignored on main, tracked here
+git commit -m "after(config): tight CLAUDE.md + permissions.deny for Section 4"
 git checkout main
 echo "after/config branch created; back on main."

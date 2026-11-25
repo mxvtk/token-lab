@@ -1,0 +1,53 @@
+{
+  "label": "headroom_chain__on",
+  "mode": "headroom-proxy-bedrock",
+  "cost_accounting": "session-delta",
+  "recorded_at": "2026-11-25T16:31:14.419Z",
+  "rows": [
+    {
+      "task": 7,
+      "reps": 3,
+      "median_total_tokens": 788095,
+      "min_total_tokens": 729460,
+      "max_total_tokens": 1086905,
+      "median_output_tokens": 4965,
+      "median_cost_usd": 0.689414,
+      "runs": [
+        {
+          "input_tokens": 37,
+          "output_tokens": 6248,
+          "cache_read_input_tokens": 1004732,
+          "cache_creation_input_tokens": 75888,
+          "total_tokens": 1086905,
+          "cost_usd": 0.8505786,
+          "num_turns": 27
+        },
+        {
+          "input_tokens": 30,
+          "output_tokens": 4863,
+          "cache_read_input_tokens": 659171,
+          "cache_creation_input_tokens": 65396,
+          "total_tokens": 729460,
+          "cost_usd": 0.6631622999999999,
+          "num_turns": 20
+        },
+        {
+          "input_tokens": 31,
+          "output_tokens": 4965,
+          "cache_read_input_tokens": 716447,
+          "cache_creation_input_tokens": 66652,
+          "total_tokens": 788095,
+          "cost_usd": 0.6894140999999999,
+          "num_turns": 21
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "total_tokens": 788095,
+    "min_total_tokens": 729460,
+    "max_total_tokens": 1086905,
+    "output_tokens": 4965,
+    "cost_usd": 0.689414
+  }
+}

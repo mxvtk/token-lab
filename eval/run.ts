@@ -26,13 +26,13 @@
  * and ON really run the same query against the same files.
  *
  * Grading is manual/binary: each rep stores the agent's final text and the diff
- * it produced in results/<label>.runs/, so you can check it before trusting the
+ * it produced in <RESULTS_DIR>/<label>.runs/, so you can check it before trusting the
  * tokens.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,12 +42,17 @@ const APP_DIRS = ["api", "web", "db"].filter((d) => existsSync(join(ROOT, d)));
 const CLAUDE_BIN = (process.env.CLAUDE_BIN || "claude").replace(/^~(?=\/)/, homedir());
 const MCP_CONFIG = process.env.EVAL_MCP_CONFIG || "";
 const EXTRA_SETTINGS = process.env.EVAL_CLAUDE_SETTINGS || "";
+const MODEL = "sonnet";
+// Your runs go to results/local/ (gitignored); results/ holds the facilitator's
+// baseline that the deck is built from. RESULTS_DIR=results writes the baseline.
+const RESULTS_DIR = resolve(ROOT, process.env.RESULTS_DIR || "results/local");
 
 // steps: a multi-turn conversation — each step is sent as the next user message
 // in the same session (`--resume <session_id>`); usage is summed over all steps.
 // allow: extra tools pre-approved for this task only (headless runs deny Bash
 // commands that aren't allowlisted), e.g. allow: Bash(psql:*), Bash(git diff:*)
-type Task = { id: number; prompt: string; grade: string; live_only?: boolean; steps?: string[]; allow?: string[] };
+// reps: default rep count for a noisy task (an explicit --reps / EVAL_REPS wins).
+type Task = { id: number; prompt: string; grade: string; live_only?: boolean; steps?: string[]; allow?: string[]; reps?: number };
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -84,6 +89,12 @@ function loadTasks(): Task[] {
     if (lm && cur) {
       flush();
       if (lm[2] === "true") cur.live_only = true;
+      continue;
+    }
+    const repsMatch = line.match(/^\s*reps:\s*(\d+)\s*$/);
+    if (repsMatch && cur) {
+      flush();
+      cur.reps = Number(repsMatch[1]);
       continue;
     }
     const am = line.match(/^\s*allow:\s*(.+)$/);
@@ -129,7 +140,16 @@ type Usage = {
   total_tokens: number;
   cost_usd: number;
   num_turns: number;
+  // tool calls blocked by a permissions.deny rule: proof the Config ON side's
+  // deny rules fired (0 = the agent never tried to read a denied path)
+  permission_denials: number;
 };
+
+/** e.g. "2.1.332 (Claude Code)" — results depend on it, so every file records it. */
+function claudeVersion(): string | undefined {
+  const r = spawnSync(CLAUDE_BIN, ["--version"], { encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : undefined;
+}
 
 function git(args: string[]) {
   return spawnSync("git", args, { cwd: ROOT, encoding: "utf8" });
@@ -173,7 +193,7 @@ function claudeCall(prompt: string, resume?: string, allow: string[] = []): any 
       "-p", prompt,
       ...(resume ? ["--resume", resume] : []),
       "--output-format", "json",
-      "--model", "sonnet",
+      "--model", MODEL,
       // Headless runs deny edits by default; the tasks need to edit files.
       "--permission-mode", "acceptEdits",
       ...(allow.length ? ["--allowedTools", ...allow] : []),
@@ -211,7 +231,7 @@ function claudeCall(prompt: string, resume?: string, allow: string[] = []): any 
  * conversation: step 1 starts a session, every later step resumes it, and the
  * usage of all calls is summed (each call reports only its own usage).
  */
-function runTask(task: Task): { usage: Usage; text: string; diff: string } {
+function runTask(task: Task): { usage: Usage; text: string; diff: string; denied: string[] } {
   resetAppTree();
   const prompts = task.steps?.length ? task.steps : [task.prompt];
   let session: string | undefined;
@@ -221,6 +241,7 @@ function runTask(task: Task): { usage: Usage; text: string; diff: string } {
   // only the increase is this step's cost.
   let sessionCost = 0;
   const texts: string[] = [];
+  const denied: string[] = [];
   prompts.forEach((p, i) => {
     const r = claudeCall(p, session, task.allow);
     if (prompts.length > 1) {
@@ -240,6 +261,7 @@ function runTask(task: Task): { usage: Usage; text: string; diff: string } {
     cost += cum >= sessionCost ? cum - sessionCost : cum; // a drop = the tally restarted
     sessionCost = cum;
     turns += r.num_turns ?? 0;
+    for (const d of r.permission_denials ?? []) denied.push(`${d.tool_name} ${JSON.stringify(d.tool_input ?? {})}`);
     texts.push(prompts.length > 1 ? `### Step ${i + 1}: ${p}\n\n${String(r.result ?? "")}` : String(r.result ?? ""));
   });
   if (input + output + cacheRead + cacheCreate === 0) {
@@ -258,9 +280,11 @@ function runTask(task: Task): { usage: Usage; text: string; diff: string } {
       total_tokens: input + output + cacheRead + cacheCreate,
       cost_usd: cost,
       num_turns: turns,
+      permission_denials: denied.length,
     },
     text: texts.join("\n\n"),
     diff,
+    denied,
   };
 }
 
@@ -273,7 +297,8 @@ function median(xs: number[]): number {
 function main() {
   const label = arg("label") ?? "run";
   const only = arg("task");
-  const reps = Math.max(1, Number(arg("reps") ?? process.env.EVAL_REPS ?? 3));
+  const explicitReps = arg("reps") ?? process.env.EVAL_REPS;
+  const repsFor = (t: Task) => Math.max(1, Number(explicitReps ?? t.reps ?? 3));
   const all = loadTasks();
   if (process.argv.includes("--list")) {
     // print what the parser read — check a new task before spending a run on it
@@ -288,7 +313,7 @@ function main() {
     process.exit(1);
   }
 
-  const resultsDir = join(ROOT, "results");
+  const resultsDir = RESULTS_DIR;
   const runsDir = join(resultsDir, `${label}.runs`);
   mkdirSync(runsDir, { recursive: true });
   const outPath = join(resultsDir, `${label}.json`);
@@ -298,19 +323,19 @@ function main() {
     if (!prev.note) rows = prev.rows ?? []; // keep earlier real rows, drop placeholders
   }
 
-  console.log(`claude: ${CLAUDE_BIN}   reps: ${reps}`);
+  console.log(`claude: ${CLAUDE_BIN}   reps: ${explicitReps ?? "per task (default 3)"}   results: ${RESULTS_DIR}`);
   for (const task of tasks) {
     process.stdout.write(`\n▶ [${label}] task ${task.id}: ${task.prompt}\n`);
     const runs: Usage[] = [];
-    for (let i = 1; i <= reps; i++) {
-      const { usage, text, diff } = runTask(task);
+    for (let i = 1, reps = repsFor(task); i <= reps; i++) {
+      const { usage, text, diff, denied } = runTask(task);
       runs.push(usage);
       writeFileSync(
         join(runsDir, `task${task.id}-rep${i}.md`),
-        `# ${label} task ${task.id} rep ${i}\n\nGrade: ${task.grade}\n\n## Agent result\n\n${text}\n\n## Diff\n\n\`\`\`diff\n${diff}\`\`\`\n\n## Usage\n\n\`\`\`json\n${JSON.stringify(usage, null, 2)}\n\`\`\`\n`
+        `# ${label} task ${task.id} rep ${i}\n\nGrade: ${task.grade}\n\n## Agent result\n\n${text}\n\n## Diff\n\n\`\`\`diff\n${diff}\`\`\`\n\n${denied.length ? `## Denied by permissions\n\n${denied.map((d) => `- ${d}`).join("\n")}\n\n` : ""}## Usage\n\n\`\`\`json\n${JSON.stringify(usage, null, 2)}\n\`\`\`\n`
       );
       console.log(
-        `  rep ${i}: in=${usage.input_tokens} out=${usage.output_tokens} cache_read=${usage.cache_read_input_tokens} cache_create=${usage.cache_creation_input_tokens} total=${usage.total_tokens} turns=${usage.num_turns} $${usage.cost_usd.toFixed(4)}`
+        `  rep ${i}: in=${usage.input_tokens} out=${usage.output_tokens} cache_read=${usage.cache_read_input_tokens} cache_create=${usage.cache_creation_input_tokens} total=${usage.total_tokens} turns=${usage.num_turns}${usage.permission_denials ? ` denied=${usage.permission_denials}` : ""} $${usage.cost_usd.toFixed(4)}`
       );
     }
     const totals = runs.map((r) => r.total_tokens);
@@ -348,7 +373,7 @@ function main() {
       // the deck can say what was actually measured. Not `note` — that marks placeholders.
       // cost_accounting: "session-delta" = cost_usd is per step (see runTask). Files
       // without it predate that fix; their multi-step costs are overcounted.
-      { label, mode: process.env.EVAL_MODE || undefined, cost_accounting: "session-delta", recorded_at: new Date().toISOString(), rows, totals },
+      { label, mode: process.env.EVAL_MODE || undefined, model: MODEL, claude_version: claudeVersion(), cost_accounting: "session-delta", recorded_at: new Date().toISOString(), rows, totals },
       null,
       2
     ) + "\n"

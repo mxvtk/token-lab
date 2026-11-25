@@ -5,18 +5,20 @@ const API = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 type User = { id: number; email: string; created_at: string };
 
 export function App() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<User | null>(null);
 
   useEffect(() => {
     fetch(`${API}/api/users`)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setUsers)
-      .catch(() => setUsers([]));
+      .catch((e: Error) => setError(e.message));
   }, []);
 
-  // NOTE (eval task 2): this line crashes the list view when `users` is empty,
-  // because users[0] is undefined. The fix is to guard for an empty array.
+  if (error) return <main style={{ fontFamily: "system-ui", padding: 24 }}>Could not load users: {error}</main>;
+  if (!users) return <main style={{ fontFamily: "system-ui", padding: 24 }}>Loading…</main>;
+
   const firstEmail = users[0].email;
 
   return (

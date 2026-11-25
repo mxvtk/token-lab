@@ -4,8 +4,12 @@ dist/
 .env
 .DS_Store
 
-# Scratch files left in the working tree during scaffolding. The real
-# .claudeignore is created by participants in Section 4; it is tracked on the
-# after/config branch, so ignoring it here keeps `main` as a clean "before".
+# Participant eval runs (eval:all default). results/ itself is the facilitator baseline.
+results/local/
+
+# Scratch files left in the working tree during scaffolding. The project
+# .claude/settings.json (permissions.deny) is created by participants in Section 4;
+# it is tracked on the after/config branch, so ignoring it here keeps `main` a
+# clean "before". The Config A/B writes it for the ON side only.
 _t
-.claudeignore
+.claude/settings.json

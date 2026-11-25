@@ -4,14 +4,22 @@
  * with it OFF and with it ON, and report the difference. Nothing is cumulative —
  * each row isolates one optimization against its own matched control.
  *
- * Reads results/<opt>__off.json and results/<opt>__on.json for each optimization.
+ * Reads <dir>/<opt>__off.json and <dir>/<opt>__on.json for each optimization, where
+ * <dir> is $RESULTS_DIR, else results/local/ (your runs) if it has any, else
+ * results/ (the facilitator's baseline).
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const RESULTS = join(__dirname, "..", "results");
+const ROOT = join(__dirname, "..");
+const LOCAL = join(ROOT, "results", "local");
+const RESULTS = process.env.RESULTS_DIR
+  ? resolve(ROOT, process.env.RESULTS_DIR)
+  : existsSync(LOCAL) && readdirSync(LOCAL).some((f) => f.endsWith(".json"))
+    ? LOCAL
+    : join(ROOT, "results");
 
 const OPTS: [string, string][] = [
   ["headroom", "Headroom"],
@@ -47,6 +55,7 @@ function load(label: string): Side {
 
 function main() {
   console.log("");
+  console.log(`Reading ${RESULTS.slice(ROOT.length + 1) || "."}/` + (RESULTS === LOCAL ? "  (your runs)" : RESULTS === join(ROOT, "results") ? "  (facilitator baseline)" : ""));
   console.log("Same query, measured OFF vs ON — one isolated A/B per optimization.\n");
   console.log("Totals are sums of per-task medians; [min–max] across reps.\n");
   console.log(

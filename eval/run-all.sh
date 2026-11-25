@@ -9,7 +9,8 @@
 #   ./eval/run-all.sh --only caveman --rows caveman_chain   # one scoreboard row
 #   ./eval/run-all.sh --long     # also the long-answer + long-chat rows (~$30 total)
 #
-# Records results/<opt>__off.json and results/<opt>__on.json, then prints the
+# Records $RESULTS_DIR/<opt>__off.json and __on.json (default results/local/,
+# gitignored — results/ is the facilitator baseline the deck uses), then prints the
 # scoreboard. Refuses to run (rather than record zeros) if claude isn't logged in.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -33,6 +34,9 @@ done
 # Default: plain `claude` on PATH. Override only if your setup wraps it, e.g.
 #   CLAUDE_BIN=~/.axcli/bin/claude npm run eval:all -- --task 1
 export CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+export RESULTS_DIR="${RESULTS_DIR:-results/local}"
+mkdir -p "$RESULTS_DIR"
+RD="$RESULTS_DIR"
 
 # Homebrew's libpq is keg-only (psql not on PATH by default). Put it on PATH so
 # both this script and the agent it drives can run psql.
@@ -64,10 +68,11 @@ CHAIN_TASK="${CHAIN_TASK:-7}"
 
 say "Preflight"
 command -v "$CLAUDE_BIN" >/dev/null || die "claude CLI not found ($CLAUDE_BIN)"
-"$CLAUDE_BIN" -p "reply with: ok" --output-format json </dev/null 2>/dev/null | grep -q '"is_error":false' \
-  || die "claude is NOT authenticated ($CLAUDE_BIN) — a run now would record zeros. Sign in and retry."
-curl -fs http://localhost:3001/api/users >/dev/null 2>&1 || die "app not up — run 'docker compose up -d'"
 command -v node >/dev/null || die "node not found"
+"$CLAUDE_BIN" -p "reply with: ok" --output-format json </dev/null 2>/dev/null | node scripts/claude-ok.mjs \
+  || die "claude is NOT authenticated ($CLAUDE_BIN) — a run now would record zeros. Sign in and retry."
+curl -fs http://localhost:3001/api/users >/dev/null 2>&1 \
+  || die "API not answering on http://localhost:3001/api/users — start it ('docker compose up -d', or your own api + Postgres without Docker; any stack on :3001 works)"
 git status >/dev/null 2>&1 || die "git can't read this repo (needed to reset the app tree between runs)"
 printf "   %s authenticated, app up, node + git OK\n" "$CLAUDE_BIN"
 
@@ -147,23 +152,23 @@ hr_row() {   # $1 = row, $2 = off|on
   row "$L" || return 0
   after=$(hr_metrics); p1=$(hr_pipeline_runs)
   printf '# proxy --mode %s, compression pipeline ran on %s requests\n# /metrics before\n%s\n\n# /metrics after\n%s\n' \
-    "$HR_PROXY_MODE" "$((p1 - p0))" "$before" "$after" > "results/$lab.headroom-metrics.txt"
+    "$HR_PROXY_MODE" "$((p1 - p0))" "$before" "$after" > "$RD/$lab.headroom-metrics.txt"
   local b a
   b=$(printf '%s\n' "$before" | awk '/^headroom_requests_total/{print $2}')
   a=$(printf '%s\n' "$after"  | awk '/^headroom_requests_total/{print $2}')
-  printf "   headroom proxy requests during %s: %s → %s, pipeline ran on %s   (metrics: results/%s.headroom-metrics.txt)\n" "$lab" "${b:-0}" "${a:-?}" "$((p1 - p0))" "$lab"
+  printf "   headroom proxy requests during %s: %s → %s, pipeline ran on %s   (metrics: %s/%s.headroom-metrics.txt)\n" "$lab" "${b:-0}" "${a:-?}" "$((p1 - p0))" "$RD" "$lab"
   # What the proxy says it saved — OFF (--no-optimize) should show nothing new, ON may.
   printf '%s\n' "$after" | grep -iE '^[a-z_]*(saved|compress)[a-z_]*(\{| )' | grep -v '^#' | head -5 | sed 's/^/     /'
-  if [ -z "$a" ] || [ "${a%.*}" -le "${b%.*}" ]; then rm -f "results/$lab.json"; return 1; fi
+  if [ -z "$a" ] || [ "${a%.*}" -le "${b%.*}" ]; then rm -f "$RD/$lab.json"; return 1; fi
   # ON must have actually run the pipeline. Requests alone don't prove it: in cache
   # mode the Bedrock route forwards everything untouched.
   if [ "$2" = on ] && [ "$((p1 - p0))" -eq 0 ]; then
-    rm -f "results/$lab.json"; HR_WHY="proxy forwarded the requests but never ran its compression pipeline (--mode $HR_PROXY_MODE)"; return 1
+    rm -f "$RD/$lab.json"; HR_WHY="proxy forwarded the requests but never ran its compression pipeline (--mode $HR_PROXY_MODE)"; return 1
   fi
   return 0
 }
 hr_fail() {  # skip the rest of the Headroom A/B, keep going with the others
-  for L in headroom headroom_long headroom_chain; do row "$L" && rm -f "results/${L}__on.json"; done
+  for L in headroom headroom_long headroom_chain; do row "$L" && rm -f "$RD/${L}__on.json"; done
   unset EVAL_MODE ANTHROPIC_BASE_URL EVAL_CLAUDE_SETTINGS
   hr_stop; trap - EXIT
   skip "Headroom" "$1"
@@ -291,7 +296,7 @@ elif [ "$CV_WAS" != absent ] || cv_available; then
   EVAL_MODE=caveman-plugin ev caveman__on
   EVAL_MODE=caveman-plugin evt "$LONG_TASK" caveman_long__on
   EVAL_MODE=caveman-plugin evt "$CHAIN_TASK" caveman_chain__on
-  [ "$(cv_stamp)" != "$B" ] || { for L in caveman caveman_long caveman_chain; do row $L && rm -f results/${L}__on.json; done; die "caveman's SessionStart hook never ran during ON — refusing to record it"; }
+  [ "$(cv_stamp)" != "$B" ] || { for L in caveman caveman_long caveman_chain; do row $L && rm -f "$RD/${L}__on.json"; done; die "caveman's SessionStart hook never ran during ON — refusing to record it"; }
   printf "   caveman hook fired during ON (flag file refreshed)\n"
 
   cv_restore; trap - EXIT
@@ -299,17 +304,32 @@ else
   skip "Caveman" "$CAVEMAN_ID not installed or available — run: claude plugin marketplace add anthropics/claude-plugins-community"
 fi
 
-# ---------- Config A/B : no project config vs tight CLAUDE.md ----------
+# ---------- Config A/B : no project config vs tight CLAUDE.md + permissions.deny ----------
+# ON = config/CLAUDE.md.after as ./CLAUDE.md, plus config/settings.json.after as
+# ./.claude/settings.json. The deny rules block reads of results/ (tracked: prior
+# runs' answers and diffs, which Grep would otherwise find), node_modules, dist and
+# lockfiles. Claude Code does NOT read .claudeignore, so that file is not used.
+# Each rep's "## Denied by permissions" section in $RD/config__on.runs/ shows
+# whether a rule actually fired. Your own files are moved aside and put back.
 if want config; then
-say "Config A/B (same query, CLAUDE.md off then on)"
-for f in CLAUDE.md .claudeignore; do [ -e "$f" ] && mv "$f" "$f.bak.$$"; done
-sub "OFF — no CLAUDE.md / .claudeignore"
-ev config__off
-sub "ON — tight CLAUDE.md + .claudeignore"
-cp config/CLAUDE.md.after CLAUDE.md; cp config/claudeignore.after .claudeignore
-ev config__on
-rm -f CLAUDE.md .claudeignore
-for f in CLAUDE.md .claudeignore; do [ -e "$f.bak.$$" ] && mv "$f.bak.$$" "$f"; done
+say "Config A/B (same query, project config off then on)"
+CFG_SETTINGS=.claude/settings.json
+CFG_HAD_DIR=$([ -d .claude ] && echo 1 || echo 0)
+cfg_restore() {
+  rm -f CLAUDE.md "$CFG_SETTINGS"
+  for f in CLAUDE.md "$CFG_SETTINGS"; do [ -e "$f.bak.$$" ] && mv "$f.bak.$$" "$f"; done
+  [ "$CFG_HAD_DIR" = 0 ] && rmdir .claude 2>/dev/null
+  return 0
+}
+for f in CLAUDE.md "$CFG_SETTINGS"; do [ -e "$f" ] && mv "$f" "$f.bak.$$"; done
+trap cfg_restore EXIT
+sub "OFF — no CLAUDE.md, no project permissions"
+EVAL_MODE=config ev config__off
+sub "ON — tight CLAUDE.md + .claude/settings.json permissions.deny"
+cp config/CLAUDE.md.after CLAUDE.md
+mkdir -p .claude; cp config/settings.json.after "$CFG_SETTINGS"
+EVAL_MODE=config ev config__on
+cfg_restore; trap - EXIT
 fi
 
 # ---------- CLI-vs-MCP A/B : GitHub/Postgres MCP servers on vs off ----------
@@ -341,4 +361,4 @@ fi
 
 say "Scoreboard — one isolated A/B per optimization"
 npm run scoreboard
-echo "Next: npm run deck  (rebuilds the scoreboard slide from results/)"
+echo "Your results: $RD/  (the deck is built from the facilitator baseline in results/)"
