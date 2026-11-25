@@ -87,8 +87,11 @@ printf "   %s authenticated, app up, node + git OK\n" "$CLAUDE_BIN"
 #          compression even with it ON, so OFF and ON are identical. Only runs
 #          when asked for explicitly (HEADROOM_AB=axcli), and labels itself so.
 HEADROOM_BIN="${HEADROOM_BIN:-headroom}"
-# setup.sh installs Headroom into a venv (Homebrew Python refuses pip --user).
-command -v "$HEADROOM_BIN" >/dev/null 2>&1 || { [ -x "$HOME/.venvs/headroom/bin/headroom" ] && HEADROOM_BIN="$HOME/.venvs/headroom/bin/headroom"; }
+# setup.sh installs Headroom with `uv tool install` (~/.local/bin, maybe not on PATH yet).
+for c in "$HOME/.local/bin/headroom" "$HOME/.venvs/headroom/bin/headroom"; do
+  command -v "$HEADROOM_BIN" >/dev/null 2>&1 && break
+  [ -x "$c" ] && HEADROOM_BIN="$c"
+done
 HR_PORT="${HEADROOM_AB_PORT:-8788}"   # not 8787: axcli's sidecar may hold that
 HEADROOM_AB="${HEADROOM_AB:-proxy}"
 # Headroom's default --mode is "cache" (freeze prior turns). On the Bedrock
@@ -164,6 +167,9 @@ hr_fail() {  # skip the rest of the Headroom A/B, keep going with the others
   unset EVAL_MODE ANTHROPIC_BASE_URL EVAL_CLAUDE_SETTINGS
   hr_stop; trap - EXIT
   skip "Headroom" "$1"
+  # Evidence for whoever debugs it: which headroom, and what the proxy itself said.
+  printf "     headroom: %s (%s)\n" "$(command -v "$HEADROOM_BIN")" "$("$HEADROOM_BIN" --version 2>/dev/null | head -1)"
+  printf "     last lines of %s:\n" "$HR_LOG"; tail -15 "$HR_LOG" 2>/dev/null | sed 's/^/       /'
 }
 
 if ! want headroom; then
@@ -227,12 +233,13 @@ else
 fi
 
 # ---------- Caveman A/B : plugin off vs on ----------
-# Caveman ships in the org marketplace (agentic-builders-hub). Once enabled, its
+# Caveman comes from Anthropic's public community marketplace (claude-community,
+# added by ./setup.sh). Once enabled, its
 # SessionStart hook injects the caveman ruleset into every session — no command
 # needed. Every toggle here is --scope local (this repo's
 # .claude/settings.local.json), so your user-level plugin setup is never touched,
 # and the local override is removed afterwards.
-CAVEMAN_ID="${CAVEMAN_PLUGIN:-caveman@agentic-builders-hub}"
+CAVEMAN_ID="${CAVEMAN_PLUGIN:-caveman@claude-community}"
 cv_state() {   # prints: absent | enabled | disabled
   "$CLAUDE_BIN" plugin list --json 2>/dev/null | node -e '
     const id = process.argv[1].split("@")[0];
@@ -289,7 +296,7 @@ elif [ "$CV_WAS" != absent ] || cv_available; then
 
   cv_restore; trap - EXIT
 else
-  skip "Caveman" "$CAVEMAN_ID not installed or available in any marketplace"
+  skip "Caveman" "$CAVEMAN_ID not installed or available — run: claude plugin marketplace add anthropics/claude-plugins-community"
 fi
 
 # ---------- Config A/B : no project config vs tight CLAUDE.md ----------

@@ -18,38 +18,65 @@ fi
 
 step "2. Eval runner deps (tsx)"
 if command -v npm >/dev/null 2>&1; then
-  npm install --silent >/dev/null 2>&1 && ok "npm install" || warn "npm install failed"
+  # Public registry pinned in ./.npmrc — a company registry in ~/.npmrc would ask for npm login.
+  if npm install --silent --registry=https://registry.npmjs.org/ >/tmp/token-lab-npm.log 2>&1; then
+    ok "npm install"
+  else
+    warn "npm install failed (full log: /tmp/token-lab-npm.log):"; grep -iE 'err|401|403|auth' /tmp/token-lab-npm.log | head -5 | sed 's/^/      /'
+  fi
 else
   warn "npm not found — install Node 20+"
 fi
 
 step "3. Headroom (compresses tool outputs before the model)"
-# Installed into its own venv: Homebrew Python refuses `pip install --user`
-# (PEP 668, externally-managed-environment). eval/run-all.sh finds it there.
-HR_VENV="$HOME/.venvs/headroom"
+# Official install (github.com/headroomlabs-ai/headroom, "Install"):
+#   uv tool install --python 3.13 "headroom-ai[all]"
+# uv fetches Python 3.13 itself and puts the CLI in ~/.local/bin.
+HR_LOG_INSTALL=/tmp/token-lab-headroom-install.log
+HR_UV_BIN="$HOME/.local/bin/headroom"
 if command -v headroom >/dev/null 2>&1; then
   ok "headroom already installed ($(headroom --version 2>/dev/null | head -1))"
-elif [ -x "$HR_VENV/bin/headroom" ]; then
-  ok "headroom already installed in $HR_VENV ($("$HR_VENV/bin/headroom" --version 2>/dev/null | head -1))"
-elif command -v python3 >/dev/null 2>&1; then
-  python3 -m venv "$HR_VENV" >/dev/null 2>&1 \
-    && "$HR_VENV/bin/pip" install -q "headroom-ai[all]" >/dev/null 2>&1 \
-    && ok "installed into $HR_VENV" \
-    || warn "headroom install failed — try: python3 -m venv $HR_VENV && $HR_VENV/bin/pip install \"headroom-ai[all]\""
+elif [ -x "$HR_UV_BIN" ]; then
+  ok "headroom already installed in $HR_UV_BIN ($("$HR_UV_BIN" --version 2>/dev/null | head -1))"
+elif [ -x "$HOME/.venvs/headroom/bin/headroom" ]; then
+  ok "headroom already installed in ~/.venvs/headroom"
 else
-  warn "no python3 — install Python 3.10+, then re-run ./setup.sh"
+  if ! command -v uv >/dev/null 2>&1; then
+    if command -v brew >/dev/null 2>&1; then
+      brew install uv >"$HR_LOG_INSTALL" 2>&1 && ok "installed uv" || warn "brew install uv failed (log: $HR_LOG_INSTALL)"
+    else
+      warn "uv not found — install it: https://docs.astral.sh/uv/getting-started/installation/"
+    fi
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    if uv tool install --python 3.13 "headroom-ai[all]" >>"$HR_LOG_INSTALL" 2>&1; then
+      uv tool update-shell >/dev/null 2>&1   # puts ~/.local/bin on PATH for new shells
+      ok "headroom installed ($("$HR_UV_BIN" --version 2>/dev/null | head -1)) — open a new terminal if 'headroom' isn't found"
+    else
+      warn "headroom install failed (full log: $HR_LOG_INSTALL):"
+      tail -5 "$HR_LOG_INSTALL" | sed 's/^/      /'
+      warn "behind a corporate SSL proxy? see https://github.com/headroomlabs-ai/headroom#install (Corporate networks)"
+    fi
+  fi
 fi
 
 step "4. Caveman plugin (compresses the model's output)"
 # Only CHECK here. The eval toggles caveman itself, in this repo only
 # (--scope local), so your other sessions are never switched to caveman mode.
-CAVEMAN_ID="${CAVEMAN_PLUGIN:-caveman@agentic-builders-hub}"
-if claude plugin list --json --available 2>/dev/null | grep -q "\"$CAVEMAN_ID\""; then
+# Source: Anthropic's public community marketplace (anthropics/claude-plugins-community,
+# marketplace name "claude-community"), which pins upstream JuliusBrussee/caveman.
+CAVEMAN_ID="${CAVEMAN_PLUGIN:-caveman@claude-community}"
+cv_avail() { claude plugin list --json --available 2>/dev/null | grep -q "\"$CAVEMAN_ID\""; }
+if ! cv_avail && [ "$CAVEMAN_ID" = caveman@claude-community ]; then
+  claude plugin marketplace add anthropics/claude-plugins-community >/dev/null 2>&1 \
+    && ok "added Anthropic community marketplace (claude-community)"
+fi
+if cv_avail; then
   ok "$CAVEMAN_ID available — the eval enables it for this repo only"
 elif claude plugin list --json 2>/dev/null | grep -q "\"caveman@"; then
   ok "caveman already installed"
 else
-  warn "$CAVEMAN_ID not found — add the org marketplace (agentic-builders-hub), or set CAVEMAN_PLUGIN=<id>"
+  warn "$CAVEMAN_ID not found — run: claude plugin marketplace add anthropics/claude-plugins-community"
 fi
 
 step "5. CLI tools for the CLI-vs-MCP phase (gh + psql)"

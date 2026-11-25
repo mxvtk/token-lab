@@ -50,20 +50,25 @@ to send back to the facilitator.
 #### 0. What the machine needs
 - **Docker Desktop**, running. Ports **5173** (web), **3001** (api), **5432** (Postgres)
   and **8788** (Headroom proxy) must be free.
-- **Node 20+** and **Python 3.10+**.
-- **Homebrew** (macOS) — `setup.sh` uses it to install `gh` and `psql` if missing.
+- **Node 20+**.
+- **Homebrew** (macOS) — `setup.sh` uses it to install `uv`, `gh` and `psql` if missing.
+- **Headroom** — `setup.sh` installs it the [official way](https://github.com/headroomlabs-ai/headroom#install):
+  `uv tool install --python 3.13 "headroom-ai[all]"` (uv brings its own Python 3.13).
 - **Claude Code** (`claude` on PATH), logged in with **claude.ai or an Anthropic API key**.
   Bedrock through a *local* gateway (`ANTHROPIC_BEDROCK_BASE_URL=http://127.0.0.1:…`)
   also works. Vertex, or Bedrock straight to AWS, can't be routed through Headroom —
   the Headroom tests are skipped.
 - **`gh auth login`** done.
-- **Caveman plugin:** the Caveman tests need `caveman@agentic-builders-hub` from the
-  monday org plugin marketplace. Without it you get `⤼ SKIP Caveman` — expected, not a failure.
+- **Caveman plugin:** [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman), installed as
+  `caveman@claude-community` from Anthropic's public community marketplace
+  ([anthropics/claude-plugins-community](https://github.com/anthropics/claude-plugins-community)).
+  `setup.sh` adds the marketplace; by hand: `claude plugin marketplace add anthropics/claude-plugins-community`.
+  Not `caveman@anthropic-plugin-directory` — that is a different plugin with the same name.
 
 #### 1. Get the repo and set up
 ```bash
 git clone https://github.com/mxvtk/token-lab && cd token-lab
-./setup.sh       # docker up, npm install, Headroom venv, caveman check, gh/psql, claude auth
+./setup.sh       # docker up, npm install, Headroom (uv), caveman check, gh/psql, claude auth
 ./preflight.sh   # should end with "All green"
 ```
 Every `setup.sh` line should be ✓ — note any `!` line. Open http://localhost:5173: you
@@ -158,8 +163,9 @@ corrected figure yet.
 ```bash
 ./setup.sh      # docker up, npm install, install Headroom, enable caveman, gh/psql, check auth
 ```
-Headroom goes into its own venv (`~/.venvs/headroom`) — Homebrew Python refuses
-`pip install --user`. `eval:all` finds it there; set `HEADROOM_BIN` to use another copy.
+Headroom is installed with `uv tool install --python 3.13 "headroom-ai[all]"` into
+`~/.local/bin`. `eval:all` finds it there even before a new shell picks up the PATH; set
+`HEADROOM_BIN` to use another copy.
 
 No savings number is claimed in advance — every figure comes from a real run.
 `npm run scoreboard` shows `—` for any A/B that has no OFF+ON pair yet.
@@ -175,7 +181,7 @@ so the runner records only each step's increase. Files written that way carry
 
 ## The four optimizations (workshop flow)
 1. **Headroom** (demo) — the [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) proxy; compresses tool outputs/logs/JSON before they reach the model (`headroom wrap`).
-2. **Caveman plugin** (demo) — compress the model's own output.
+2. **Caveman plugin** (demo) — [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (`caveman@claude-community`); compresses the model's own output.
 3. **Config** (hands-on) — add a tight `CLAUDE.md` + `.claudeignore`. Reference in `config/`.
 4. **CLI instead of MCP** (hands-on) — `gh` and `psql` instead of MCP servers.
 
