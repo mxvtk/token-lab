@@ -43,7 +43,7 @@ record an A/B whose toggle provably didn't take effect (Headroom: no requests re
 proxy; Caveman: its hook never fired; MCP: a server didn't connect). A Headroom failure
 skips the Headroom rows only — the other A/Bs still run.
 
-### Running the participant tests (tester / dry run)
+### Running the participant tests
 How to run every test designed for workshop participants, what to check, and what
 to send back to the facilitator.
 
