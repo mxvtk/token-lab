@@ -193,6 +193,11 @@ function claudeCall(prompt: string, resume?: string, allow: string[] = []): any 
       "-p", prompt,
       ...(resume ? ["--resume", resume] : []),
       "--output-format", "json",
+      // Without --verbose (and without `verbose: true` in the user's settings),
+      // json output is only the result object — no system/init event, so the
+      // MCP check below can't see any server. Output format only; the requests
+      // sent to the model are the same.
+      "--verbose",
       "--model", MODEL,
       // Headless runs deny edits by default; the tasks need to edit files.
       "--permission-mode", "acceptEdits",
@@ -213,6 +218,9 @@ function claudeCall(prompt: string, resume?: string, allow: string[] = []): any 
     const wanted = Object.keys(JSON.parse(readFileSync(MCP_CONFIG, "utf8")).mcpServers ?? {});
     const events = [].concat(JSON.parse(res.stdout));
     const init: any = events.find((e: any) => e && e.type === "system" && e.subtype === "init");
+    if (!init) {
+      throw new Error("claude output has no system/init event, so MCP server status can't be checked (is this Claude Code too old for --verbose json output? run: claude update)");
+    }
     const status = new Map((init?.mcp_servers ?? []).map((s: any) => [s.name, s.status]));
     const bad = wanted.filter((n) => status.get(n) !== "connected");
     if (bad.length) {
