@@ -26,8 +26,6 @@ something answering on `http://localhost:3001/api/users`.
 `preflight.sh` makes one tiny `claude -p` call to check auth (a few cents on an API
 key); `SKIP_CLAUDE_CALL=1` skips it.
 
-Open http://localhost:5173 — you'll see the users list.
-
 > `web/src/App.tsx` has a deliberate bug: it crashes **only when the API returns an empty
 > list** (a normal seeded DB renders fine). That's eval **task 2** — leave it until the workshop.
 
@@ -90,8 +88,7 @@ git clone https://github.com/mxvtk/token-lab && cd token-lab
 ./setup.sh       # docker up, npm install, Claude Code version, caveman check, gh/psql, claude auth
 ./preflight.sh   # should end with "All green"
 ```
-Every `setup.sh` line should be ✓ — note any `!` line. Open http://localhost:5173: you
-should see a users list.
+Every `setup.sh` line should be ✓ — note any `!` line.
 
 > Do not fix `web/src/App.tsx`. Its crash on an empty API response is deliberate — it is eval task 2.
 
