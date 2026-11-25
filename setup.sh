@@ -24,14 +24,20 @@ else
 fi
 
 step "3. Headroom (compresses tool outputs before the model)"
+# Installed into its own venv: Homebrew Python refuses `pip install --user`
+# (PEP 668, externally-managed-environment). eval/run-all.sh finds it there.
+HR_VENV="$HOME/.venvs/headroom"
 if command -v headroom >/dev/null 2>&1; then
   ok "headroom already installed ($(headroom --version 2>/dev/null | head -1))"
-elif command -v pipx >/dev/null 2>&1; then
-  pipx install "headroom-ai[all]" >/dev/null 2>&1 && ok "installed via pipx" || warn "pipx install failed — see docs.headroomlabs.ai"
-elif command -v pip3 >/dev/null 2>&1; then
-  pip3 install --user "headroom-ai[all]" >/dev/null 2>&1 && ok "installed via pip3" || warn "pip3 install failed — see docs.headroomlabs.ai"
+elif [ -x "$HR_VENV/bin/headroom" ]; then
+  ok "headroom already installed in $HR_VENV ($("$HR_VENV/bin/headroom" --version 2>/dev/null | head -1))"
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -m venv "$HR_VENV" >/dev/null 2>&1 \
+    && "$HR_VENV/bin/pip" install -q "headroom-ai[all]" >/dev/null 2>&1 \
+    && ok "installed into $HR_VENV" \
+    || warn "headroom install failed — try: python3 -m venv $HR_VENV && $HR_VENV/bin/pip install \"headroom-ai[all]\""
 else
-  warn "no pip/pipx — install Python, then: pipx install \"headroom-ai[all]\""
+  warn "no python3 — install Python 3.10+, then re-run ./setup.sh"
 fi
 
 step "4. Caveman plugin (compresses the model's output)"

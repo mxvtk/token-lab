@@ -87,8 +87,37 @@ printf "   %s authenticated, app up, node + git OK\n" "$CLAUDE_BIN"
 #          compression even with it ON, so OFF and ON are identical. Only runs
 #          when asked for explicitly (HEADROOM_AB=axcli), and labels itself so.
 HEADROOM_BIN="${HEADROOM_BIN:-headroom}"
+# setup.sh installs Headroom into a venv (Homebrew Python refuses pip --user).
+command -v "$HEADROOM_BIN" >/dev/null 2>&1 || { [ -x "$HOME/.venvs/headroom/bin/headroom" ] && HEADROOM_BIN="$HOME/.venvs/headroom/bin/headroom"; }
 HR_PORT="${HEADROOM_AB_PORT:-8788}"   # not 8787: axcli's sidecar may hold that
 HEADROOM_AB="${HEADROOM_AB:-proxy}"
+# Headroom's default --mode is "cache" (freeze prior turns). On the Bedrock
+# passthrough that means NO compression at all (handlers/bedrock.py bypasses on
+# cache mode) — verified 2026-11-25: 72 requests, 0 input tokens seen. "token"
+# runs the pipeline on every request, on both transports.
+HR_PROXY_MODE="${HEADROOM_AB_MODE:-token}"
+HR_LOG="/tmp/token-lab-headroom-$HR_PORT.log"
+# One "[router] route_counts=" line per request the compression pipeline actually ran on.
+hr_pipeline_runs() { local n; n=$(grep -c '\[router\] route_counts=' "$HR_LOG" 2>/dev/null); echo "${n:-0}"; }
+
+# Bedrock-mode Claude Code (e.g. the axcli wrapper) ignores ANTHROPIC_BASE_URL and
+# posts to ANTHROPIC_BEDROCK_BASE_URL instead. If that points at a local re-signing
+# gateway, Headroom sits in between with its Bedrock InvokeModel passthrough
+# (--bedrock-api-url), and claude is pointed at the proxy with --settings (the
+# settings.json `env` block beats the shell env). Empty = first-party transport.
+hr_bedrock_upstream() {
+  [ -n "${HEADROOM_BEDROCK_UPSTREAM:-}" ] && { echo "$HEADROOM_BEDROCK_UPSTREAM"; return; }
+  node -e '
+    const fs = require("fs"), p = require("path"), os = require("os");
+    let env = {};
+    try { env = JSON.parse(fs.readFileSync(p.join(process.env.CLAUDE_CONFIG_DIR || p.join(os.homedir(), ".claude"), "settings.json"), "utf8")).env || {}; } catch {}
+    const get = (k) => env[k] ?? process.env[k] ?? "";
+    const on = /^(1|true)$/i.test(get("CLAUDE_CODE_USE_BEDROCK"));
+    const url = get("ANTHROPIC_BEDROCK_BASE_URL");
+    if (on && /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(url)) console.log(url);
+  ' 2>/dev/null
+}
+HR_BEDROCK_UP="$(want headroom && hr_bedrock_upstream)"
 
 hr_metrics()  { curl -s -m 3 "http://127.0.0.1:$HR_PORT/metrics" 2>/dev/null; }
 hr_requests() { hr_metrics | awk '/^headroom_requests_total/{print $2}'; }
@@ -96,7 +125,8 @@ HR_PID=""
 hr_stop() { [ -n "$HR_PID" ] && kill "$HR_PID" 2>/dev/null; wait "$HR_PID" 2>/dev/null; HR_PID=""; }
 hr_start() {   # $1 = extra flags ("" or "--no-optimize"); returns 1 if the proxy never came up
   hr_stop
-  "$HEADROOM_BIN" proxy --port "$HR_PORT" --no-telemetry $1 >"/tmp/token-lab-headroom-$HR_PORT.log" 2>&1 & HR_PID=$!
+  local up=""; [ -n "$HR_BEDROCK_UP" ] && up="--bedrock-api-url $HR_BEDROCK_UP"
+  "$HEADROOM_BIN" proxy --port "$HR_PORT" --no-telemetry --mode "$HR_PROXY_MODE" $up $1 >"$HR_LOG" 2>&1 & HR_PID=$!
   for _ in $(seq 1 60); do
     curl -fs -m 1 "http://127.0.0.1:$HR_PORT/health" >/dev/null 2>&1 && return 0
     kill -0 "$HR_PID" 2>/dev/null || break
@@ -108,25 +138,30 @@ hr_start() {   # $1 = extra flags ("" or "--no-optimize"); returns 1 if the prox
 # request reached the proxy, and saves the proxy's /metrics before/after next to
 # the result as evidence of what it actually did. Returns 1 if not routed.
 hr_row() {   # $1 = row, $2 = off|on
-  local L="$1" lab="$1__$2" before after
-  before=$(hr_metrics)
+  local L="$1" lab="$1__$2" before after p0 p1
+  before=$(hr_metrics); p0=$(hr_pipeline_runs)
   case $L in headroom) ev "$lab" ;; headroom_long) evt "$LONG_TASK" "$lab" ;; *) evt "$CHAIN_TASK" "$lab" ;; esac
   row "$L" || return 0
-  after=$(hr_metrics)
-  printf '# /metrics before\n%s\n\n# /metrics after\n%s\n' "$before" "$after" > "results/$lab.headroom-metrics.txt"
+  after=$(hr_metrics); p1=$(hr_pipeline_runs)
+  printf '# proxy --mode %s, compression pipeline ran on %s requests\n# /metrics before\n%s\n\n# /metrics after\n%s\n' \
+    "$HR_PROXY_MODE" "$((p1 - p0))" "$before" "$after" > "results/$lab.headroom-metrics.txt"
   local b a
   b=$(printf '%s\n' "$before" | awk '/^headroom_requests_total/{print $2}')
   a=$(printf '%s\n' "$after"  | awk '/^headroom_requests_total/{print $2}')
-  printf "   headroom proxy requests during %s: %s → %s   (metrics: results/%s.headroom-metrics.txt)\n" "$lab" "${b:-0}" "${a:-?}" "$lab"
-  # What the proxy says it saved — OFF (--no-optimize) should show nothing new, ON should.
+  printf "   headroom proxy requests during %s: %s → %s, pipeline ran on %s   (metrics: results/%s.headroom-metrics.txt)\n" "$lab" "${b:-0}" "${a:-?}" "$((p1 - p0))" "$lab"
+  # What the proxy says it saved — OFF (--no-optimize) should show nothing new, ON may.
   printf '%s\n' "$after" | grep -iE '^[a-z_]*(saved|compress)[a-z_]*(\{| )' | grep -v '^#' | head -5 | sed 's/^/     /'
-  [ -n "$a" ] && [ "${a%.*}" -gt "${b%.*}" ] && return 0
-  rm -f "results/$lab.json"
-  return 1
+  if [ -z "$a" ] || [ "${a%.*}" -le "${b%.*}" ]; then rm -f "results/$lab.json"; return 1; fi
+  # ON must have actually run the pipeline. Requests alone don't prove it: in cache
+  # mode the Bedrock route forwards everything untouched.
+  if [ "$2" = on ] && [ "$((p1 - p0))" -eq 0 ]; then
+    rm -f "results/$lab.json"; HR_WHY="proxy forwarded the requests but never ran its compression pipeline (--mode $HR_PROXY_MODE)"; return 1
+  fi
+  return 0
 }
 hr_fail() {  # skip the rest of the Headroom A/B, keep going with the others
   for L in headroom headroom_long headroom_chain; do row "$L" && rm -f "results/${L}__on.json"; done
-  unset EVAL_MODE ANTHROPIC_BASE_URL
+  unset EVAL_MODE ANTHROPIC_BASE_URL EVAL_CLAUDE_SETTINGS
   hr_stop; trap - EXIT
   skip "Headroom" "$1"
 }
@@ -137,25 +172,33 @@ elif [ "$HEADROOM_AB" = proxy ] && command -v "$HEADROOM_BIN" >/dev/null 2>&1; t
   say "Headroom A/B (same query through headroom proxy: passthrough, then optimizing)"
   trap hr_stop EXIT
   HR_OK=1
-  sub "OFF — headroom proxy --no-optimize on :$HR_PORT"
+  sub "OFF — headroom proxy --mode $HR_PROXY_MODE --no-optimize on :$HR_PORT"
   if ! hr_start --no-optimize; then
     HR_OK=0; hr_fail "headroom proxy did not come up on :$HR_PORT (see /tmp/token-lab-headroom-$HR_PORT.log)"
   fi
-  [ "$HR_OK" = 1 ] && export EVAL_MODE=headroom-proxy ANTHROPIC_BASE_URL="http://127.0.0.1:$HR_PORT"
+  if [ "$HR_OK" = 1 ] && [ -n "$HR_BEDROCK_UP" ]; then
+    # Bedrock transport: claude → headroom :$HR_PORT → local gateway ($HR_BEDROCK_UP)
+    sub "claude is in Bedrock mode — routing via headroom's Bedrock passthrough to $HR_BEDROCK_UP"
+    export EVAL_MODE=headroom-proxy-bedrock
+    export EVAL_CLAUDE_SETTINGS="{\"env\":{\"ANTHROPIC_BEDROCK_BASE_URL\":\"http://127.0.0.1:$HR_PORT\",\"AWS_ENDPOINT_URL_BEDROCK_RUNTIME\":\"http://127.0.0.1:$HR_PORT\"}}"
+  elif [ "$HR_OK" = 1 ]; then
+    export EVAL_MODE=headroom-proxy ANTHROPIC_BASE_URL="http://127.0.0.1:$HR_PORT"
+  fi
   for L in headroom headroom_long headroom_chain; do
     [ "$HR_OK" = 1 ] || break
-    hr_row "$L" off || { HR_OK=0; hr_fail "no requests reached the proxy — this claude ignores ANTHROPIC_BASE_URL (Bedrock/Vertex?). Needs first-party auth."; }
+    hr_row "$L" off || { HR_OK=0; hr_fail "no requests reached the proxy — this claude ignores ANTHROPIC_BASE_URL (Vertex, or Bedrock straight to AWS?). Needs first-party auth or a local Bedrock gateway."; }
   done
   if [ "$HR_OK" = 1 ]; then
-    sub "ON — headroom proxy (optimizing) on :$HR_PORT"
+    sub "ON — headroom proxy --mode $HR_PROXY_MODE (optimizing) on :$HR_PORT"
     hr_start "" || { HR_OK=0; hr_fail "headroom proxy (optimizing) did not come up on :$HR_PORT"; }
   fi
   for L in headroom headroom_long headroom_chain; do
     [ "$HR_OK" = 1 ] || break
-    hr_row "$L" on || { HR_OK=0; hr_fail "no requests reached the proxy during ON"; }
+    HR_WHY=""
+    hr_row "$L" on || { HR_OK=0; hr_fail "${HR_WHY:-no requests reached the proxy during ON}"; }
   done
   if [ "$HR_OK" = 1 ]; then
-    unset EVAL_MODE ANTHROPIC_BASE_URL
+    unset EVAL_MODE ANTHROPIC_BASE_URL EVAL_CLAUDE_SETTINGS
     hr_stop; trap - EXIT
   fi
 elif [ "$HEADROOM_AB" = axcli ] && command -v axcli >/dev/null 2>&1 && axcli config compression >/dev/null 2>&1; then

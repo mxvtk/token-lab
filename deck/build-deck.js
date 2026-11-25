@@ -10,6 +10,14 @@ const nodePath = require("path");
 // headroom-axcli-mcp: headless `claude -p` sessions get no axcli compression, so OFF = ON
 // (verified 2026-11-25).
 const INVALID_MODES = new Set(["headroom-axcli-mcp"]);
+// List price per MTok of the model the eval runs (`--model sonnet` resolved to
+// claude-sonnet-4-6 in these runs), from platform.claude.com/docs/en/about-claude/pricing
+// (checked 2026-11-25): cache read = 0.1x input; cache write at the 1-hour rate (2x
+// input) — Claude Code's recorded cost_usd matches that rate to the cent on every rep
+// of headroom_chain__off, not the 5-minute 1.25x rate.
+// Used to price MEASURED token counts with vs without prompt caching; recorded
+// cost_usd is still what every cost-change figure uses.
+const PRICE = { input: 3, cacheWrite: 6, cacheRead: 0.30, output: 15 };
 function loadResult(label) {
   try {
     const f = nodePath.join(__dirname, "..", "results", `${label}.json`);
@@ -40,9 +48,18 @@ function runStats(label) {
   const runs = d.rows[0].runs;
   const med = (k) => { const s = runs.map((r) => r[k]).sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
   const sum = (k) => runs.reduce((a, r) => a + (r[k] ?? 0), 0);
+  // cost_usd is trustworthy only when per step — older chat results summed a
+  // cumulative session tally and overcount.
+  const costOk = d.cost_accounting === "session-delta";
+  // The same measured tokens priced at list rates, with caching (as billed) and
+  // without (every input-side token at the base input rate). Per run, averaged.
+  const [i, cr, cw, o] = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"].map(sum);
+  const withCache = (i * PRICE.input + cr * PRICE.cacheRead + cw * PRICE.cacheWrite + o * PRICE.output) / 1e6 / runs.length;
+  const noCache = ((i + cr + cw) * PRICE.input + o * PRICE.output) / 1e6 / runs.length;
   return {
-    total: d.totals.total_tokens, out: med("output_tokens"), turns: med("num_turns"), cost: med("cost_usd"),
-    cacheShare: sum("cache_read_input_tokens") / sum("total_tokens"), outShare: sum("output_tokens") / sum("total_tokens"),
+    total: d.totals.total_tokens, out: med("output_tokens"), turns: med("num_turns"), cost: med("cost_usd"), costOk,
+    cacheShare: cr / sum("total_tokens"), outShare: o / sum("total_tokens"),
+    caching: { withCache, noCache, recorded: costOk ? sum("cost_usd") / runs.length : null },
   };
 }
 // signed % change from a to b, e.g. "−24%" / "+7%"
@@ -334,6 +351,9 @@ function scCell(x, y, w, txt, color, bold) {
 }
 let ry = 2.4;
 const scMeta = [];
+// Every computed string the two results slides render, written to slide-text.json so
+// the Google Slides copy of the deck is filled from the same computation (no retyping).
+const EXPORT = { scoreboard: { rows: [], footnote: "" }, findings: [] };
 scCell(scX + 0.15, ry, scW * cols[0], "Optimization", MUTE, true);
 scCell(scX + scW * cols[0], ry, scW * cols[1], "Before (off)", MUTE, true);
 scCell(scX + scW * (cols[0] + cols[1]), ry, scW * cols[2], "After (on)", MUTE, true);
@@ -349,6 +369,7 @@ ry += rowH;
   scCell(scX + scW * (cols[0] + cols[1]), ry, scW * cols[2], ab.on, MUTE);
   scCell(scX + scW * (cols[0] + cols[1] + cols[2]), ry, scW * cols[3], ab.saved, ab.win ? GREEN : MUTE);
   if (ab.meta) scMeta.push({ label, key, ...ab.meta, noise: ab.noise });
+  EXPORT.scoreboard.rows.push({ label, off: ab.off, on: ab.on, saved: ab.saved, win: !!ab.win });
   ry += rowH;
 });
 // Footnote generated from the results files — what was actually measured.
@@ -376,6 +397,7 @@ if (scMeta.length) {
     const mOff = modeOf("off"), mOn = modeOf("on");
     const HR_MODE_TEXT = {
       "headroom-proxy": "Headroom = traffic routed through headroom proxy, passthrough (--no-optimize) vs optimizing.",
+      "headroom-proxy-bedrock": "Headroom = traffic routed through headroom proxy (Bedrock passthrough to the local gateway), --mode token, --no-optimize vs optimizing.",
     };
     if (mOff && mOff === mOn && HR_MODE_TEXT[mOn]) notes.push(HR_MODE_TEXT[mOn]);
     else notes.push("Headroom toggle method not recorded — re-run eval:all.");
@@ -383,6 +405,7 @@ if (scMeta.length) {
     notes.push("Headroom: not measured yet (proxy A/B pending).");
   }
   if (scMeta.some((m) => m.noise)) notes.push("* OFF and ON ranges overlap — within run-to-run noise.");
+  EXPORT.scoreboard.footnote = notes.join("  ");
   s.addText(notes.join("  "), { x: scX, y: ry + 0.1, w: scW + 0.6, h: 0.7, fontFace: BODY, fontSize: 10, color: MUTE, isTextBox: true, margin: 0 });
 }
 // honest callout — method, not a fabricated result
@@ -419,26 +442,54 @@ title(s, "What the numbers say");
   const cc = pair("caveman_chain");
   cards.push(cc.ab.meta && cc.off && cc.on ? {
     head: "Caveman in a long chat", big: `${chg(cc.off.out, cc.on.out)} output`, color: YELLOW,
-    body: `Cost ${chg(cc.off.cost, cc.on.cost)}: output is only ${pctOf(cc.off.outShare)} of a long chat's tokens.`,
+    body: `${cc.off.costOk && cc.on.costOk ? `Cost ${chg(cc.off.cost, cc.on.cost)}` : `Tokens ${chg(cc.off.total, cc.on.total)}`}: output is only ${pctOf(cc.off.outShare)} of a long chat's tokens.`,
   } : { head: "Caveman in a long chat", ...MISSING });
+  const usd = (x) => `$${x.toFixed(2)}`;
+  const ccc = cc.off?.caching;
   cards.push(cc.off ? {
-    head: "Long chats re-read context", big: pctOf(cc.off.cacheShare), color: PURPLE_L,
-    body: "of all tokens in the 6-message session were cache reads. Compact, or start a fresh session.",
-  } : { head: "Long chats re-read context", ...MISSING });
+    head: "Long chats live on the prompt cache", big: `${pctOf(cc.off.cacheShare)} cache reads`, color: PURPLE_L,
+    body: `Reads bill at 1/10 of input: ${usd(ccc.withCache)} per 6-message chat cached vs ${usd(ccc.noCache)} uncached (${chg(ccc.noCache, ccc.withCache)}), Sonnet list price. Keep the prefix stable; compact, don't restart.`,
+  } : { head: "Long chats live on the prompt cache", ...MISSING });
   const cli = pair("cli");
   cards.push(cli.ab.meta ? {
     head: cli.ab.noise ? "CLI vs MCP: within noise" : "CLI vs MCP", big: chg(resultTotal("cli__off").total, resultTotal("cli__on").total),
     color: cli.ab.win ? GREEN : MUTE,
     body: "Both MCP servers connected, yet their schemas didn't move the total on this task.",
   } : { head: "CLI vs MCP", ...MISSING });
-  const hr = abRow("headroom");
-  cards.push(hr.meta ? {
-    head: "Headroom", big: `${hr.pct} fewer`, color: hr.win ? GREEN : MUTE,
-    body: "Through headroom proxy, passthrough vs optimizing — checked via the proxy's own /metrics.",
-  } : {
-    head: "Headroom: not measured yet", big: "—", color: MUTE,
-    body: "Our first try flipped a setting headless runs ignore, so OFF = ON. Verify the switch first.",
-  });
+  // Headroom: all three rows, plus what the proxy itself says it compressed during ON
+  // (delta of headroom_tokens_saved_total in results/<row>__on.headroom-metrics.txt).
+  // { saved, runs }: tokens_saved delta from /metrics, and the number of requests the
+  // compression pipeline ran on (header line written by run-all.sh hr_row).
+  const hrProxy = (label) => {
+    try {
+      const t = fs.readFileSync(nodePath.join(__dirname, "..", "results", `${label}.headroom-metrics.txt`), "utf8");
+      const [before, after] = t.split("# /metrics after");
+      const val = (s) => Number((s.match(/^headroom_tokens_saved_total\s+([\d.e+]+)/m) || [])[1] ?? NaN);
+      const v = val(after) - (val(before) || 0);
+      const runs = Number((t.match(/pipeline ran on (\d+) requests/) || [])[1] ?? NaN);
+      return { saved: Number.isFinite(v) ? v : null, runs: Number.isFinite(runs) ? runs : null };
+    } catch { return { saved: null, runs: null }; }
+  };
+  const HR_ROWS = [["headroom", "edit"], ["headroom_long", "review"], ["headroom_chain", "chat"]]
+    .map(([k, name]) => ({ k, name, ab: abRow(k), off: resultTotal(`${k}__off`), on: resultTotal(`${k}__on`), proxy: hrProxy(`${k}__on`) }))
+    .filter((r) => r.ab.meta);
+  if (HR_ROWS.length) {
+    const best = [...HR_ROWS].sort((a, b) => (b.off.total - b.on.total) / b.off.total - (a.off.total - a.on.total) / a.off.total)[0];
+    const anyWin = HR_ROWS.some((r) => r.ab.win);
+    const proxySaved = HR_ROWS.reduce((a, r) => a + (r.proxy.saved ?? 0), 0);
+    const pipeRuns = HR_ROWS.every((r) => r.proxy.runs != null) ? HR_ROWS.reduce((a, r) => a + r.proxy.runs, 0) : null;
+    const proxyLine = pipeRuns != null
+      ? `Proxy compressed ${Math.round(proxySaved).toLocaleString()} tokens over ${pipeRuns} requests it inspected.`
+      : `Proxy's own /metrics: ${Math.round(proxySaved).toLocaleString()} tokens compressed.`;
+    cards.push({
+      head: anyWin ? `Headroom: best on the ${best.name}` : proxySaved === 0 ? "Headroom: nothing to squeeze here" : "Headroom: within noise here",
+      big: `${chg(best.off.total, best.on.total)} tokens`, color: anyWin ? GREEN : MUTE,
+      body: `${HR_ROWS.map((r) => `${r.name} ${chg(r.off.total, r.on.total)}${r.ab.noise ? "*" : ""}`).join(", ")} (* = noise). ${proxyLine}`,
+    });
+  } else {
+    cards.push({ head: "Headroom", ...MISSING, body: "Not measured yet — run npm run eval:all -- --only headroom --long." });
+  }
+  EXPORT.findings = cards.map(({ head, big, body }) => ({ head, big, body }));
   const gap = 0.35, cw = (W - 2 * M - 2 * gap) / 3, ch = 2.05;
   cards.forEach((c, i) => {
     const x = M + (i % 3) * (cw + gap), y = 2.2 + Math.floor(i / 3) * (ch + 0.25);
@@ -502,4 +553,5 @@ dots(s, M, 5.55, 0.13);
 s.addText("Thank you", { x: M, y: 6.0, w: 6, h: 0.7, fontFace: HEAD, fontSize: 24, color: WHITE, bold: true, isTextBox: true, margin: 0 });
 wordmark(s, W - 2.9, H - 0.6);
 
+fs.writeFileSync(nodePath.join(__dirname, "slide-text.json"), JSON.stringify(EXPORT, null, 2) + "\n");
 p.writeFile({ fileName: nodePath.join(__dirname, "token-spend-workshop.pptx") }).then(f => console.log("WROTE", f));

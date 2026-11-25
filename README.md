@@ -45,15 +45,20 @@ skips the Headroom rows only — the other A/Bs still run.
 
 ### Dry run of the participant path (facilitator, before the workshop)
 Run this on a machine set up **like a participant's**: plain `claude` on PATH, logged in
-with first-party auth (claude.ai / Anthropic API — *not* Bedrock/Vertex, which ignore
-`ANTHROPIC_BASE_URL`, so the Headroom proxy can't see the traffic).
+with first-party auth (claude.ai / Anthropic API). Bedrock mode with a **local** gateway
+(`ANTHROPIC_BEDROCK_BASE_URL=http://127.0.0.1:…`, e.g. axcli) also works: `eval:all` puts
+Headroom in front of it with `--bedrock-api-url` and records `mode: headroom-proxy-bedrock`.
+Vertex, or Bedrock straight to AWS, can't be routed — the Headroom rows are skipped.
 ```bash
 ./setup.sh                     # every line should be ✓ — note any ! lines
 npm run eval:all -- --task 1   # default rows; about $4
 ```
 Check, and send back to the facilitator:
 1. The `Headroom A/B` section ran (not `⤼ SKIP`), and each row printed
-   `headroom proxy requests during …: N → M` with M > N.
+   `headroom proxy requests during …: N → M, pipeline ran on K` with M > N, and K > 0 on
+   every `__on` row. The proxy runs with `--mode token` (override: `HEADROOM_AB_MODE`):
+   Headroom's default `cache` mode forwards Bedrock traffic untouched, so an ON side in
+   that mode measures nothing — `eval:all` refuses to record an ON row where K = 0.
 2. The `saved/compress` metric lines under `headroom_…__on` grew, and under `__off` did not —
    that is the proof Headroom was really off, then on. The raw `/metrics` snapshots are in
    `results/*.headroom-metrics.txt`.
@@ -67,6 +72,8 @@ long-answer and long-chat Headroom rows, ~$15).
 ```bash
 ./setup.sh      # docker up, npm install, install Headroom, enable caveman, gh/psql, check auth
 ```
+Headroom goes into its own venv (`~/.venvs/headroom`) — Homebrew Python refuses
+`pip install --user`. `eval:all` finds it there; set `HEADROOM_BIN` to use another copy.
 
 No savings number is claimed in advance — every figure comes from a real run.
 `npm run scoreboard` shows `—` for any A/B that has no OFF+ON pair yet.
@@ -75,6 +82,10 @@ No savings number is claimed in advance — every figure comes from a real run.
 `results/<opt>__off.json` / `__on.json` hold the facilitator's measured runs (each with its
 `.runs/` folder: the agent's answer, its diff and usage per rep, so every number can be
 checked). Your own `eval:all` overwrites them with your numbers.
+
+Cost: in a multi-message chat `claude` reports `total_cost_usd` cumulatively per session,
+so the runner records only each step's increase. Files written that way carry
+`"cost_accounting": "session-delta"`; the deck ignores the cost of files without it.
 
 ## The four optimizations (workshop flow)
 1. **Headroom** (demo) — the [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) proxy; compresses tool outputs/logs/JSON before they reach the model (`headroom wrap`).

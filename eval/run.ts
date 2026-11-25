@@ -17,6 +17,10 @@
  *   EVAL_MODE        how the A/B toggle was applied; stored as `mode` in the results.
  *   EVAL_MCP_CONFIG  extra MCP config passed with --mcp-config; every server in it
  *                    must report "connected" or the run is refused.
+ *   EVAL_CLAUDE_SETTINGS  extra settings JSON passed with --settings (run-all.sh
+ *                    uses it to point a Bedrock-mode claude at the Headroom proxy:
+ *                    settings.json `env` wins over the shell env, so exporting
+ *                    ANTHROPIC_BEDROCK_BASE_URL alone would be ignored).
  *
  * Each rep starts from a clean app tree (api/ web/ db/ reset via git), so OFF
  * and ON really run the same query against the same files.
@@ -37,6 +41,7 @@ const APP_DIRS = ["api", "web", "db"].filter((d) => existsSync(join(ROOT, d)));
 
 const CLAUDE_BIN = (process.env.CLAUDE_BIN || "claude").replace(/^~(?=\/)/, homedir());
 const MCP_CONFIG = process.env.EVAL_MCP_CONFIG || "";
+const EXTRA_SETTINGS = process.env.EVAL_CLAUDE_SETTINGS || "";
 
 // steps: a multi-turn conversation — each step is sent as the next user message
 // in the same session (`--resume <session_id>`); usage is summed over all steps.
@@ -174,6 +179,7 @@ function claudeCall(prompt: string, resume?: string, allow: string[] = []): any 
       ...(allow.length ? ["--allowedTools", ...allow] : []),
       // Extra MCP servers for the CLI-vs-MCP control side (see run-all.sh).
       ...(MCP_CONFIG ? ["--mcp-config", MCP_CONFIG] : []),
+      ...(EXTRA_SETTINGS ? ["--settings", EXTRA_SETTINGS] : []),
     ],
     { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }
   );
@@ -210,6 +216,10 @@ function runTask(task: Task): { usage: Usage; text: string; diff: string } {
   const prompts = task.steps?.length ? task.steps : [task.prompt];
   let session: string | undefined;
   let input = 0, output = 0, cacheRead = 0, cacheCreate = 0, cost = 0, turns = 0;
+  // `usage` is per call, but `total_cost_usd` is cumulative for the session on
+  // --resume (verified 2026-11-25: step 2 reported step 1's cost + its own), so
+  // only the increase is this step's cost.
+  let sessionCost = 0;
   const texts: string[] = [];
   prompts.forEach((p, i) => {
     const r = claudeCall(p, session, task.allow);
@@ -226,7 +236,9 @@ function runTask(task: Task): { usage: Usage; text: string; diff: string } {
     output += u.output_tokens ?? 0;
     cacheRead += u.cache_read_input_tokens ?? 0;
     cacheCreate += u.cache_creation_input_tokens ?? 0;
-    cost += r.total_cost_usd ?? 0;
+    const cum = r.total_cost_usd ?? 0;
+    cost += cum >= sessionCost ? cum - sessionCost : cum; // a drop = the tally restarted
+    sessionCost = cum;
     turns += r.num_turns ?? 0;
     texts.push(prompts.length > 1 ? `### Step ${i + 1}: ${p}\n\n${String(r.result ?? "")}` : String(r.result ?? ""));
   });
@@ -334,7 +346,9 @@ function main() {
     JSON.stringify(
       // mode: how the A/B toggle was applied (set by run-all.sh via EVAL_MODE), so
       // the deck can say what was actually measured. Not `note` — that marks placeholders.
-      { label, mode: process.env.EVAL_MODE || undefined, recorded_at: new Date().toISOString(), rows, totals },
+      // cost_accounting: "session-delta" = cost_usd is per step (see runTask). Files
+      // without it predate that fix; their multi-step costs are overcounted.
+      { label, mode: process.env.EVAL_MODE || undefined, cost_accounting: "session-delta", recorded_at: new Date().toISOString(), rows, totals },
       null,
       2
     ) + "\n"
