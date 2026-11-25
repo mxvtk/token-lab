@@ -51,15 +51,18 @@ function runStats(label) {
   // cost_usd is trustworthy only when per step — older chat results summed a
   // cumulative session tally and overcount.
   const costOk = d.cost_accounting === "session-delta";
-  // The same measured tokens priced at list rates, with caching (as billed) and
-  // without (every input-side token at the base input rate). Per run, averaged.
-  const [i, cr, cw, o] = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"].map(sum);
-  const withCache = (i * PRICE.input + cr * PRICE.cacheRead + cw * PRICE.cacheWrite + o * PRICE.output) / 1e6 / runs.length;
-  const noCache = ((i + cr + cw) * PRICE.input + o * PRICE.output) / 1e6 / runs.length;
+  // per-run values, median across reps (one outlier rep must not move the per-request arithmetic)
+  const medOf = (f) => { const s = runs.map(f).sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const inSide = (r) => r.input_tokens + r.cache_read_input_tokens + r.cache_creation_input_tokens;
+  const price = (r) => (r.input_tokens * PRICE.input + r.cache_read_input_tokens * PRICE.cacheRead + r.cache_creation_input_tokens * PRICE.cacheWrite + r.output_tokens * PRICE.output) / 1e6;
+  const priceNoCache = (r) => (inSide(r) * PRICE.input + r.output_tokens * PRICE.output) / 1e6;
   return {
     total: d.totals.total_tokens, out: med("output_tokens"), turns: med("num_turns"), cost: med("cost_usd"), costOk,
-    cacheShare: cr / sum("total_tokens"), outShare: o / sum("total_tokens"),
-    caching: { withCache, noCache, recorded: costOk ? sum("cost_usd") / runs.length : null },
+    cacheShare: sum("cache_read_input_tokens") / sum("total_tokens"), outShare: sum("output_tokens") / sum("total_tokens"),
+    // per-run medians, for per-request arithmetic in the speaker notes
+    m: { input: medOf(inSide), perReq: medOf((r) => inSide(r) / r.num_turns), cacheWrite: medOf((r) => r.cache_creation_input_tokens), output: medOf((r) => r.output_tokens), turns: med("num_turns") },
+    // list price of the median run, with caching (as billed) and without (every input-side token at the input rate)
+    caching: { withCache: medOf(price), noCache: medOf(priceNoCache), recorded: costOk ? sum("cost_usd") / runs.length : null },
   };
 }
 // signed % change from a to b, e.g. "−24%" / "+7%"
@@ -291,7 +294,7 @@ const levers = [
   ["1", "Headroom", "Compress tool outputs before they reach the model", "Demo", PURPLE],
   ["2", "Caveman", "Compress the model's output", "Demo", PURPLE_L],
   ["3", "Config", "Stop the agent re-learning the repo", "Hands-on", GREEN],
-  ["4", "CLI over MCP", "Drop tool schemas from context", "Hands-on", YELLOW],
+  ["4", "CLI over MCP", "Unload the tools you don't use", "Hands-on", YELLOW],
 ];
 const gw = (W - 2 * M - 0.5) / 2, gh = 1.75;
 levers.forEach((c, i) => {
@@ -308,9 +311,10 @@ wordmark(s, W - 2.9, H - 0.55);
 
 // ---- lever detail slide helper ----
 const LEVERS = [];   // exported to slide-text.json (Google Slides copy)
-function leverSlide(n, name, color, mode, lead, points, footer) {
-  LEVERS.push({ n, name, mode, lead, points, footer });
+function leverSlide(n, name, color, mode, lead, points, footer, notes) {
+  LEVERS.push({ n, name, mode, lead, points, footer, notes });
   const s = p.addSlide(); bg(s);
+  if (notes) s.addNotes(notes);
   leverBadge(s, M, 0.7, n, color);
   s.addText("LEVER " + n + "  ·  " + mode.toUpperCase(), { x: M + 1.15, y: 0.72, w: 8, h: 0.3, fontFace: HEAD, fontSize: 12, color: color, bold: true, charSpacing: 2, isTextBox: true, margin: 0 });
   s.addText(name, { x: M + 1.15, y: 1.0, w: 10, h: 0.7, fontFace: HEAD, fontSize: 32, color: WHITE, bold: true, isTextBox: true, margin: 0 });
@@ -323,23 +327,146 @@ function leverSlide(n, name, color, mode, lead, points, footer) {
   return s;
 }
 
+// ---- speaker notes: every figure computed from results/ (same verdict rule as the scoreboard) ----
+const tok = (x) => Math.round(x).toLocaleString("en-US");
+const usd2 = (x) => `$${x.toFixed(2)}`;
+const pct1 = (x) => { const v = x * 100; return `${v < 10 ? v.toFixed(1) : Math.round(v)}%`; };
+const times = (x) => `${Number.isInteger(x) ? x : x.toFixed(1)}×`;
+// price ratios from PRICE, so "0.1×" etc. are never typed by hand
+const RATE = { read: PRICE.cacheRead / PRICE.input, write: PRICE.cacheWrite / PRICE.input, outVsRead: PRICE.output / PRICE.cacheRead };
+const NOT_YET = "not measured yet";
+// One A/B row as a sentence, plus the stats the notes reason from. null = not measured.
+function noteRow(k, name) {
+  const ab = abRow(k), off = runStats(`${k}__off`), on = runStats(`${k}__on`);
+  if (!ab.meta || !off || !on) return { k, name, ok: false, line: `${name}: ${NOT_YET}.` };
+  const verdict = ab.meta.reps < 2 ? "unclear, 1 rep" : ab.noise ? "within noise" : on.total < off.total ? "saves" : "overhead";
+  // extra input-side tokens per model request: only meaningful when both sides made the same number of requests
+  // per-request figures are per-run medians of input/turns, so a small turn gap (19 vs 20) still compares;
+  // a large one (4 vs 6) mixes different requests and is left out
+  const sameTurns = Math.abs(on.m.turns - off.m.turns) / Math.max(on.m.turns, off.m.turns) <= 0.1;
+  const perReq = sameTurns ? on.m.perReq - off.m.perReq : null;
+  const line = `${name}: ${off.total.toLocaleString()} → ${on.total.toLocaleString()} tokens (${chg(off.total, on.total)}, ${verdict}), `
+    + `turns ${off.turns} → ${on.turns}, ${usd2(off.caching.withCache)} → ${usd2(on.caching.withCache)} at list price (${chg(off.caching.withCache, on.caching.withCache)}).`;
+  return { k, name, ok: true, ab, off, on, verdict, perReq, line };
+}
+const signedTok = (x) => `${x >= 0 ? "+" : "−"}${tok(Math.abs(x))}`;
+const measuredHead = (rows) => {
+  const ok = rows.find((r) => r.ok);
+  return `MEASURED (facilitator run, Sonnet, n=${ok ? ok.ab.meta.reps : "—"} per side; tokens = median, $ = measured tokens at list price):\n`
+    + rows.map((r) => `• ${r.line}`).join("\n");
+};
+// The reference long chat (task 7): its OFF side shows how big a request gets late in a session.
+const CHAT = ["cli_chain", "headroom_chain", "caveman_chain"].map((k) => runStats(`${k}__off`)).find(Boolean);
+// (the findings card "Long chats live on the prompt cache" reads the same CHAT, so both quote one run)
+// one lever's own long chat (OFF side), so each note quotes the run it reports
+const chatLine = (key) => {
+  const c = runStats(`${key}__off`);
+  return c
+    ? `This lever's 6-message chat (OFF side, median run) made ~${Math.round(c.m.turns)} model requests; each carried ~${tok(c.m.perReq)} input tokens on average, and ${pct1(c.cacheShare)} of all its tokens were cache reads.`
+    : "The long-chat rows are not measured yet.";
+};
+const COMPOUND_RULE = `Rule of thumb: anything added to every request costs (tokens × requests) and grows with the chat; anything that removes a request saves that request's whole context, which is largest late in a chat. Cache reads bill at ${times(RATE.read)} input, cache writes at ${times(RATE.write)}.`;
+
+const NOTES = {};
+{
+  const rows = [noteRow("headroom", "Edit (task 1)"), noteRow("headroom_long", "Review (task 6)"), noteRow("headroom_chain", "Chat (task 7)")];
+  const [edit, , chat] = rows;
+  const why = [];
+  if (edit.ok && edit.on.turns > edit.off.turns) why.push(`On the edit, ON took ${edit.off.turns} → ${edit.on.turns} turns; every extra turn re-reads the whole context, which outweighed what compression saved. The result files don't record tool calls, so which step repeated isn't measured.`);
+  if (chat.ok) why.push(`In the chat, cache writes went ${tok(chat.off.m.cacheWrite)} → ${tok(chat.on.m.cacheWrite)} per run while tokens went ${chg(chat.off.total, chat.on.total)}${chat.ab.noise ? " (within noise)" : ""}. That fits earlier messages changing between requests: the cached prefix is then written again at ${times(RATE.write)} input instead of read at ${times(RATE.read)}.`);
+  NOTES.headroom = [
+    "WHAT IT DOES: a local proxy between Claude Code and the API that rewrites tool results, logs and JSON into shorter forms before the model sees them.",
+    measuredHead(rows),
+    "WHY IT DOES OR DOESN'T WORK: " + (why.join(" ") || NOT_YET + "."),
+    "DOES IT COMPOUND AS CONVERSATIONS GROW? Only if the compressed context stays byte-stable. Then the smaller context is re-read more cheaply on every later request, and the saving grows with the chat. If it rewrites turns the model already saw, each rewrite re-buys the cache, and that grows with the chat too, against you. "
+      + (chat.ok ? `Our chat: tokens ${chg(chat.off.total, chat.on.total)}, list price ${chg(chat.off.caching.withCache, chat.on.caching.withCache)}.` : ""),
+    `TAKEAWAY: ${rows.some((r) => r.ok && r.ab.win) ? "it saved on some rows here" : "not a win on this repo"}. Try it on log- or JSON-heavy sessions and judge it on cost, not on token count.`,
+    chatLine("headroom_chain"),
+  ].join("\n\n");
+}
+{
+  const rows = [noteRow("caveman", "Edit (task 1)"), noteRow("caveman_long", "Review (task 6)"), noteRow("caveman_chain", "Chat (task 7)")];
+  const [edit, , chat] = rows;
+  const outs = rows.filter((r) => r.ok).map((r) => `${r.name.split(" ")[0].toLowerCase()} ${chg(r.off.out, r.on.out)}`).join(", ");
+  const why = rows.some((r) => r.ok)
+    ? `Output ${rows.filter((r) => r.ok).every((r) => r.on.out < r.off.out) ? "fell on every row" : "changed"} (${outs}), but output is a small slice of the bill: ${edit.ok ? `${pct1(edit.off.outShare)} of the edit's tokens` : ""}${edit.ok && chat.ok ? ", " : ""}${chat.ok ? `${pct1(chat.off.outShare)} of the chat's` : ""}. `
+      + (edit.ok && edit.perReq != null ? `With it ON, requests carried more input — the ruleset rides along on every one: ${signedTok(edit.perReq)} input tokens per request on the edit` : "")
+      + (chat.ok && chat.perReq != null ? `, ${signedTok(chat.perReq)} on the chat` : "") + "."
+    : NOT_YET + ".";
+  const compound = chat.ok && chat.perReq != null
+    ? `No, not in tokens. The ruleset is paid on every request; the saving is paid once per answer. Over the ~${Math.round(chat.on.m.turns)}-request chat that is ${signedTok(chat.perReq * chat.on.m.turns)} input tokens against ${tok(chat.off.m.output - chat.on.m.output)} output tokens saved, and the gap widens with every message. In dollars ${Math.abs(chat.on.caching.withCache / chat.off.caching.withCache - 1) <= 0.05 ? "it roughly cancels" : chat.on.caching.withCache < chat.off.caching.withCache ? "it comes out ahead" : "it still loses"}, because an output token costs ${times(RATE.outVsRead)} a cache read: ${usd2(chat.off.caching.withCache)} → ${usd2(chat.on.caching.withCache)} per chat (${chg(chat.off.caching.withCache, chat.on.caching.withCache)}).`
+    : NOT_YET + ".";
+  NOTES.caveman = [
+    "WHAT IT DOES: a plugin whose hook adds a ruleset telling the model to answer tersely.",
+    measuredHead(rows),
+    "WHY IT DOES OR DOESN'T WORK: " + why,
+    "DOES IT COMPOUND AS CONVERSATIONS GROW? " + compound,
+    "TAKEAWAY: shorter answers, not a smaller bill. Use it if your team likes reading terse output.",
+    chatLine("caveman_chain"),
+  ].join("\n\n");
+}
+{
+  const r = noteRow("config", "Edit (task 1)");
+  const why = r.ok
+    ? `One fewer turn (${r.off.turns} → ${r.on.turns}): CLAUDE.md told the agent where things are, so it skipped a step of looking around. The result files don't record tool calls, so which step was skipped isn't measured. The config itself costs little: cache writes ${signedTok(r.on.m.cacheWrite - r.off.m.cacheWrite)} tokens per run.`
+    : NOT_YET + ".";
+  const compound = r.ok
+    ? `Yes. Its cost is a small fixed prefix, cached and re-read at ${times(RATE.read)} input. Its saving is skipped requests, and a skipped request saves that request's whole context: ~${tok(r.off.m.perReq)} tokens per request on this edit. In a chat the context only grows until it is compacted, so the same skipped step is worth more the later it happens (per-request sizes aren't recorded, so how much more isn't measured). The Config chat row isn't measured yet.`
+    : NOT_YET + ".";
+  NOTES.config = [
+    "WHAT IT DOES: a lean CLAUDE.md (commands, conventions, where things live) plus permissions.deny for generated output, fixtures and lockfiles. Claude Code does not read .claudeignore.",
+    measuredHead([r]),
+    "CAVEATS: task 1 only. That ON side was CLAUDE.md alone; today's ON side adds permissions.deny, not measured yet. A second run on another machine found Config within noise on tasks 1–4.",
+    "WHY IT DOES OR DOESN'T WORK: " + why,
+    "DOES IT COMPOUND AS CONVERSATIONS GROW? " + compound,
+    "TAKEAWAY: do this first, it costs minutes. Then measure it on your own repo.",
+    COMPOUND_RULE,
+  ].join("\n\n");
+}
+{
+  const rows = [noteRow("cli", "Edit (task 1)"), noteRow("cli_long", "Review (task 6)"), noteRow("cli_chain", "Chat (task 7)")];
+  const per = rows.filter((r) => r.ok && r.perReq != null);
+  const chat = rows[2];
+  // OFF = MCP loaded, ON = CLI; so MCP's cost per request = OFF − ON
+  const mcpPerReq = (r) => -r.perReq;
+  const allNoise = rows.every((r) => r.ok && r.verdict === "within noise");
+  const share = (r) => Math.abs(r.perReq) / r.off.m.perReq;
+  const why = per.length
+    ? `Current Claude Code defers MCP tool schemas (ToolSearch): only tool names sit in the prompt, and a full schema loads only when the agent asks for it. With both servers loaded, input per request changed by ${per.map((r) => `${signedTok(mcpPerReq(r))} on the ${r.name.split(" ")[0].toLowerCase()}`).join(", ")} (median per run), at most ${pct1(Math.max(...per.map(share)))} of a request. That is not thousands of schema tokens, and it is smaller than the rep-to-rep spread, so the sign isn't meaningful.`
+    : NOT_YET + ".";
+  const compound = chat.ok && chat.perReq != null
+    ? `Barely, on this setup. The tool list is part of every request's prefix, so whatever it costs is paid (tokens × requests), read from cache at ${times(RATE.read)} input. Scaled over the ~${Math.round(chat.off.m.turns)}-request chat, the measured per-request difference comes to ${signedTok(mcpPerReq(chat) * chat.off.m.turns)} tokens, inside the noise: there is no per-request overhead here large enough to compound. What does grow fast is tool output: every result stays in the context and is re-read on every later request, so a verbose tool call early in a chat is paid ~${Math.round(chat.off.m.turns)} times. A client that doesn't defer schemas pays the full schemas on every request instead; that case isn't measured here.`
+    : `Yes, linearly: the tool list is part of every request's prefix, so it costs (tokens × requests). The chat row is ${NOT_YET}.`;
+  const takeaway = allNoise
+    ? "TAKEAWAY: on current Claude Code an idle MCP server is cheap; MCP vs CLI was within noise on all three tasks. Pick by what returns smaller results: trimmed gh/psql output or a lean MCP tool. Unload servers you don't use."
+    : "TAKEAWAY: measure it on your repo; the rows above aren't all within noise.";
+  NOTES.cli = [
+    "WHAT IT DOES: OFF = only the GitHub and Postgres MCP servers loaded (--strict-mcp-config, so nobody's own servers leak in). ON = no MCP servers; the agent uses gh and psql through Bash.",
+    measuredHead(rows),
+    "WHY IT DOES OR DOESN'T WORK: " + why,
+    "DOES IT COMPOUND AS CONVERSATIONS GROW? " + compound,
+    takeaway,
+    COMPOUND_RULE,
+  ].join("\n\n");
+}
+
 // ========== S6-9 LEVERS ==========
 leverSlide(1, "Headroom", PURPLE, "Demo",
   "A drop-in proxy that compresses tool outputs, logs and JSON before they reach the model — the bulky inputs coding agents rack up.",
   ["Run Claude Code through it: 'headroom wrap' — zero code changes", "Compresses tool / assistant messages; your prompts are untouched", "'headroom dashboard' shows live token savings", "Open source: headroomlabs-ai/headroom"],
-  "Vendor's own benchmark: ~20% for coding agents, 60-95% for JSON. We measure our own.");
+  "Vendor's own benchmark: ~20% for coding agents, 60-95% for JSON. We measure our own.", NOTES.headroom);
 leverSlide(2, "Caveman plugin", PURPLE_L, "Demo",
   "Compress the model's output and reasoning verbosity — same technical accuracy, far fewer words.",
   ["Enable the plugin; re-run a task", "Eyeball before / after: same result, shorter answers", "Savings land on the output line only — check the total too"],
-  "Attacks: verbose model output. Its own ruleset is extra context on every turn.");
+  "Attacks: verbose model output. Its own ruleset is extra context on every turn.", NOTES.caveman);
 leverSlide(3, "Config", GREEN, "Hands-on",
   "A tight project config stops the agent re-discovering the repo every session. Lowest effort — measure what it saves on your repo.",
   ["Write a lean CLAUDE.md: commands, conventions, where things live", "Deny reads of generated output, fixtures, lockfiles (permissions.deny — Claude Code ignores .claudeignore)", "The agent stops paying the 're-learn the repo' tax"],
-  "Attacks: poor defaults and reading the wrong files.");
+  "Attacks: poor defaults and reading the wrong files.", NOTES.config);
 leverSlide(4, "CLI over MCP", YELLOW, "Hands-on",
-  "MCP servers inject tool schemas into context every turn. For known tools, a plain CLI call is far cheaper.",
-  ["Use gh and psql instead of GitHub / Postgres MCP servers", "No persistent schema in context; trim the output you pipe", "Measure it on your own tools — the gain depends on your setup"],
-  "Attacks: tool schemas and chatty tool I/O.");
+  "Every loaded MCP server adds its tools to every request. Current Claude Code sends only the names and loads a schema on use, so the cost is small but paid on every turn.",
+  ["Use gh and psql instead of GitHub / Postgres MCP servers", "Unload servers you don't use: their tool list rides along on every request", "Measure it on your own client: one that sends full schemas every turn wasn't measured here"],
+  "Attacks: tool definitions in every request, and chatty tool output.", NOTES.cli);
 
 // ========== S10 SCOREBOARD (filled live — NO pre-filled numbers) ==========
 s = p.addSlide(); bg(s);
@@ -348,15 +475,15 @@ title(s, "The scoreboard");
 const SC_SUB = "Same query, each optimization OFF then ON (Sonnet). Each row is one isolated A/B, filled from results/.";
 s.addText(SC_SUB, { x: M, y: 1.85, w: 11.9, h: 0.5, fontFace: BODY, fontSize: 15, color: MUTE, isTextBox: true, margin: 0 });
 // header row: Optimization | Before (off) | After (on) | Saved
-const scX = M, scW = 7.7, rowH = 0.46, cols = [0.37, 0.22, 0.22, 0.19];
+const scX = M, scW = 7.7, rowH = 0.38, cols = [0.37, 0.22, 0.22, 0.19];
 function scCell(x, y, w, txt, color, bold) {
-  s.addText(txt, { x, y, w, h: rowH, fontFace: bold ? HEAD : BODY, fontSize: 12, color: color, bold: !!bold, valign: "middle", isTextBox: true, margin: 0.06 });
+  s.addText(txt, { x, y, w, h: rowH, fontFace: bold ? HEAD : BODY, fontSize: 11, color: color, bold: !!bold, valign: "middle", isTextBox: true, margin: 0.06 });
 }
 let ry = 2.4;
 const scMeta = [];
 // Every computed string the two results slides render, written to slide-text.json so
 // the Google Slides copy of the deck is filled from the same computation (no retyping).
-const EXPORT = { levers: LEVERS, scoreboard: { rows: [], footnote: "" }, findings: [] };
+const EXPORT = { overview: levers.map(([n, name, line, mode]) => ({ n, name, line, mode })), levers: LEVERS, scoreboard: { rows: [], footnote: "" }, findings: [] };
 scCell(scX + 0.15, ry, scW * cols[0], "Optimization", MUTE, true);
 scCell(scX + scW * cols[0], ry, scW * cols[1], "Before (off)", MUTE, true);
 scCell(scX + scW * (cols[0] + cols[1]), ry, scW * cols[2], "After (on)", MUTE, true);
@@ -364,7 +491,7 @@ scCell(scX + scW * (cols[0] + cols[1] + cols[2]), ry, scW * cols[3], "Saved", MU
 ry += rowH;
 [["Headroom", "headroom"], ["Headroom (long answer)", "headroom_long"], ["Headroom (long chat)", "headroom_chain"],
  ["Caveman", "caveman"], ["Caveman (long answer)", "caveman_long"], ["Caveman (long chat)", "caveman_chain"],
- ["Config", "config"], ["CLI vs MCP", "cli"]].forEach(([label, key], i) => {
+ ["Config", "config"], ["CLI vs MCP", "cli"], ["CLI vs MCP (long answer)", "cli_long"], ["CLI vs MCP (long chat)", "cli_chain"]].forEach(([label, key], i) => {
   const ab = abRow(key);
   if (i % 2 === 0) s.addShape(p.ShapeType.roundRect, { x: scX, y: ry, w: scW, h: rowH, rectRadius: 0.05, fill: { color: CARD }, line: { type: "none" } });
   scCell(scX + 0.15, ry, scW * cols[0], label, WHITE, true);
@@ -430,7 +557,7 @@ title(s, "What the numbers say");
   const MISSING = { big: "—", color: MUTE, body: "Not measured yet — run npm run eval:all -- --long." };
   const cards = [];
   // biggest real (non-noise) win across the measured rows
-  const winners = ["caveman", "caveman_long", "caveman_chain", "config", "cli", "headroom", "headroom_long", "headroom_chain"]
+  const winners = ["caveman", "caveman_long", "caveman_chain", "config", "cli", "cli_long", "cli_chain", "headroom", "headroom_long", "headroom_chain"]
     .map((k) => ({ k, ab: abRow(k), off: resultTotal(`${k}__off`), on: resultTotal(`${k}__on`) }))
     .filter((r) => r.ab.win).sort((a, b) => (b.off.total - b.on.total) / b.off.total - (a.off.total - a.on.total) / a.off.total);
   const cfg = pair("config");
@@ -454,16 +581,20 @@ title(s, "What the numbers say");
     body: `${cc.off.costOk && cc.on.costOk ? `Cost ${chg(cc.off.cost, cc.on.cost)}` : `Tokens ${chg(cc.off.total, cc.on.total)}`}: output is only ${pctOf(cc.off.outShare)} of a long chat's tokens.`,
   } : { head: "Caveman in a long chat", ...MISSING });
   const usd = (x) => `$${x.toFixed(2)}`;
-  const ccc = cc.off?.caching;
-  cards.push(cc.off ? {
-    head: "Long chats live on the prompt cache", big: `${pctOf(cc.off.cacheShare)} cache reads`, color: PURPLE_L,
-    body: `Reads bill at 1/10 of input: ${usd(ccc.withCache)} per 6-message chat cached vs ${usd(ccc.noCache)} uncached (${chg(ccc.noCache, ccc.withCache)}), Sonnet list price. Keep the prefix stable; compact, don't restart.`,
+  const ccc = CHAT?.caching;
+  cards.push(CHAT ? {
+    head: "Long chats live on the prompt cache", big: `${pctOf(CHAT.cacheShare)} cache reads`, color: PURPLE_L,
+    body: `Reads bill at ${times(RATE.read)} input: ${usd(ccc.withCache)} per 6-message chat cached vs ${usd(ccc.noCache)} uncached (${chg(ccc.noCache, ccc.withCache)}), Sonnet list price. Keep the prefix stable; compact, don't restart.`,
   } : { head: "Long chats live on the prompt cache", ...MISSING });
-  const cli = pair("cli");
-  cards.push(cli.ab.meta ? {
-    head: cli.ab.noise ? "CLI vs MCP: within noise" : "CLI vs MCP", big: chg(resultTotal("cli__off").total, resultTotal("cli__on").total),
-    color: cli.ab.win ? GREEN : MUTE,
-    body: "Both MCP servers connected, yet their schemas didn't move the total on this task.",
+  // CLI vs MCP: lead with the long chat when measured (where a per-request cost adds up),
+  // and say what loading the MCP servers cost per request (OFF = MCP loaded).
+  const cliRows = [["cli", "edit"], ["cli_long", "review"], ["cli_chain", "chat"]].map(([k, name]) => ({ name, r: noteRow(k, name) })).filter((x) => x.r.ok);
+  const cliLead = cliRows.find((x) => x.name === "chat") || cliRows[0];
+  cards.push(cliLead ? {
+    head: `CLI vs MCP: ${cliLead.name}${cliLead.r.ab.noise ? ", within noise" : ""}`, big: `${chg(cliLead.r.off.total, cliLead.r.on.total)} tokens`,
+    color: cliLead.r.ab.win ? GREEN : MUTE,
+    body: `${cliRows.map((x) => `${x.name} ${chg(x.r.off.total, x.r.on.total)}${x.r.ab.noise ? "*" : ""}`).join(", ")} (* = noise).`
+      + (cliLead.r.perReq != null ? ` With MCP loaded, input per request differed by ${signedTok(-cliLead.r.perReq)} tokens: names only, schemas load on use.` : ""),
   } : { head: "CLI vs MCP", ...MISSING });
   // Headroom: all three rows, plus what the proxy itself says it compressed during ON
   // (delta of headroom_tokens_saved_total in results/<row>__on.headroom-metrics.txt).

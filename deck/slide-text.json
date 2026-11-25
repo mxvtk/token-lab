@@ -1,4 +1,30 @@
 {
+  "overview": [
+    {
+      "n": "1",
+      "name": "Headroom",
+      "line": "Compress tool outputs before they reach the model",
+      "mode": "Demo"
+    },
+    {
+      "n": "2",
+      "name": "Caveman",
+      "line": "Compress the model's output",
+      "mode": "Demo"
+    },
+    {
+      "n": "3",
+      "name": "Config",
+      "line": "Stop the agent re-learning the repo",
+      "mode": "Hands-on"
+    },
+    {
+      "n": "4",
+      "name": "CLI over MCP",
+      "line": "Unload the tools you don't use",
+      "mode": "Hands-on"
+    }
+  ],
   "levers": [
     {
       "n": 1,
@@ -11,7 +37,8 @@
         "'headroom dashboard' shows live token savings",
         "Open source: headroomlabs-ai/headroom"
       ],
-      "footer": "Vendor's own benchmark: ~20% for coding agents, 60-95% for JSON. We measure our own."
+      "footer": "Vendor's own benchmark: ~20% for coding agents, 60-95% for JSON. We measure our own.",
+      "notes": "WHAT IT DOES: a local proxy between Claude Code and the API that rewrites tool results, logs and JSON into shorter forms before the model sees them.\n\nMEASURED (facilitator run, Sonnet, n=3 per side; tokens = median, $ = measured tokens at list price):\n• Edit (task 1): 148,416 → 221,101 tokens (+49%, overhead), turns 4 → 6, $0.16 → $0.20 at list price (+22%).\n• Review (task 6): 78,678 → 79,651 tokens (+1%, within noise), turns 3 → 3, $0.21 → $0.21 at list price (+2%).\n• Chat (task 7): 696,238 → 692,224 tokens (−1%, within noise), turns 19 → 19, $0.51 → $0.65 at list price (+27%).\n\nWHY IT DOES OR DOESN'T WORK: On the edit, ON took 4 → 6 turns; every extra turn re-reads the whole context, which outweighed what compression saved. The result files don't record tool calls, so which step repeated isn't measured. In the chat, cache writes went 36,591 → 64,875 per run while tokens went −1% (within noise). That fits earlier messages changing between requests: the cached prefix is then written again at 2× input instead of read at 0.1×.\n\nDOES IT COMPOUND AS CONVERSATIONS GROW? Only if the compressed context stays byte-stable. Then the smaller context is re-read more cheaply on every later request, and the saving grows with the chat. If it rewrites turns the model already saw, each rewrite re-buys the cache, and that grows with the chat too, against you. Our chat: tokens −1%, list price +27%.\n\nTAKEAWAY: not a win on this repo. Try it on log- or JSON-heavy sessions and judge it on cost, not on token count.\n\nThis lever's 6-message chat (OFF side, median run) made ~19 model requests; each carried ~36,387 input tokens on average, and 94% of all its tokens were cache reads."
     },
     {
       "n": 2,
@@ -23,7 +50,8 @@
         "Eyeball before / after: same result, shorter answers",
         "Savings land on the output line only — check the total too"
       ],
-      "footer": "Attacks: verbose model output. Its own ruleset is extra context on every turn."
+      "footer": "Attacks: verbose model output. Its own ruleset is extra context on every turn.",
+      "notes": "WHAT IT DOES: a plugin whose hook adds a ruleset telling the model to answer tersely.\n\nMEASURED (facilitator run, Sonnet, n=3 per side; tokens = median, $ = measured tokens at list price):\n• Edit (task 1): 148,586 → 158,357 tokens (+7%, overhead), turns 4 → 4, $0.16 → $0.18 at list price (+8%).\n• Review (task 6): 78,479 → 82,344 tokens (+5%, within noise), turns 3 → 3, $0.20 → $0.20 at list price (−2%).\n• Chat (task 7): 785,964 → 821,363 tokens (+5%, within noise), turns 21 → 21, $0.55 → $0.52 at list price (−7%).\n\nWHY IT DOES OR DOESN'T WORK: Output fell on every row (edit −27%, review −24%, chat −24%), but output is a small slice of the bill: 0.6% of the edit's tokens, 0.7% of the chat's. With it ON, requests carried more input — the ruleset rides along on every one: +2,496 input tokens per request on the edit, +1,780 on the chat.\n\nDOES IT COMPOUND AS CONVERSATIONS GROW? No, not in tokens. The ruleset is paid on every request; the saving is paid once per answer. Over the ~21-request chat that is +37,371 input tokens against 1,391 output tokens saved, and the gap widens with every message. In dollars it comes out ahead, because an output token costs 50× a cache read: $0.55 → $0.52 per chat (−7%).\n\nTAKEAWAY: shorter answers, not a smaller bill. Use it if your team likes reading terse output.\n\nThis lever's 6-message chat (OFF side, median run) made ~21 model requests; each carried ~37,154 input tokens on average, and 94% of all its tokens were cache reads."
     },
     {
       "n": 3,
@@ -35,19 +63,21 @@
         "Deny reads of generated output, fixtures, lockfiles (permissions.deny — Claude Code ignores .claudeignore)",
         "The agent stops paying the 're-learn the repo' tax"
       ],
-      "footer": "Attacks: poor defaults and reading the wrong files."
+      "footer": "Attacks: poor defaults and reading the wrong files.",
+      "notes": "WHAT IT DOES: a lean CLAUDE.md (commands, conventions, where things live) plus permissions.deny for generated output, fixtures and lockfiles. Claude Code does not read .claudeignore.\n\nMEASURED (facilitator run, Sonnet, n=3 per side; tokens = median, $ = measured tokens at list price):\n• Edit (task 1): 147,398 → 111,548 tokens (−24%, saves), turns 4 → 3, $0.16 → $0.15 at list price (−9%).\n\nCAVEATS: task 1 only. That ON side was CLAUDE.md alone; today's ON side adds permissions.deny, not measured yet. A second run on another machine found Config within noise on tasks 1–4.\n\nWHY IT DOES OR DOESN'T WORK: One fewer turn (4 → 3): CLAUDE.md told the agent where things are, so it skipped a step of looking around. The result files don't record tool calls, so which step was skipped isn't measured. The config itself costs little: cache writes +172 tokens per run.\n\nDOES IT COMPOUND AS CONVERSATIONS GROW? Yes. Its cost is a small fixed prefix, cached and re-read at 0.1× input. Its saving is skipped requests, and a skipped request saves that request's whole context: ~36,626 tokens per request on this edit. In a chat the context only grows until it is compacted, so the same skipped step is worth more the later it happens (per-request sizes aren't recorded, so how much more isn't measured). The Config chat row isn't measured yet.\n\nTAKEAWAY: do this first, it costs minutes. Then measure it on your own repo.\n\nRule of thumb: anything added to every request costs (tokens × requests) and grows with the chat; anything that removes a request saves that request's whole context, which is largest late in a chat. Cache reads bill at 0.1× input, cache writes at 2×."
     },
     {
       "n": 4,
       "name": "CLI over MCP",
       "mode": "Hands-on",
-      "lead": "MCP servers inject tool schemas into context every turn. For known tools, a plain CLI call is far cheaper.",
+      "lead": "Every loaded MCP server adds its tools to every request. Current Claude Code sends only the names and loads a schema on use, so the cost is small but paid on every turn.",
       "points": [
         "Use gh and psql instead of GitHub / Postgres MCP servers",
-        "No persistent schema in context; trim the output you pipe",
-        "Measure it on your own tools — the gain depends on your setup"
+        "Unload servers you don't use: their tool list rides along on every request",
+        "Measure it on your own client: one that sends full schemas every turn wasn't measured here"
       ],
-      "footer": "Attacks: tool schemas and chatty tool I/O."
+      "footer": "Attacks: tool definitions in every request, and chatty tool output.",
+      "notes": "WHAT IT DOES: OFF = only the GitHub and Postgres MCP servers loaded (--strict-mcp-config, so nobody's own servers leak in). ON = no MCP servers; the agent uses gh and psql through Bash.\n\nMEASURED (facilitator run, Sonnet, n=3 per side; tokens = median, $ = measured tokens at list price):\n• Edit (task 1): 132,571 → 132,711 tokens (0%, within noise), turns 4 → 4, $0.14 → $0.13 at list price (0%).\n• Review (task 6): 70,442 → 68,821 tokens (−2%, within noise), turns 3 → 3, $0.17 → $0.15 at list price (−11%).\n• Chat (task 7): 617,198 → 657,085 tokens (+6%, within noise), turns 19 → 20, $0.42 → $0.43 at list price (+3%).\n\nWHY IT DOES OR DOESN'T WORK: Current Claude Code defers MCP tool schemas (ToolSearch): only tool names sit in the prompt, and a full schema loads only when the agent asks for it. With both servers loaded, input per request changed by −63 on the edit, +118 on the review, −374 on the chat (median per run), at most 1.2% of a request. That is not thousands of schema tokens, and it is smaller than the rep-to-rep spread, so the sign isn't meaningful.\n\nDOES IT COMPOUND AS CONVERSATIONS GROW? Barely, on this setup. The tool list is part of every request's prefix, so whatever it costs is paid (tokens × requests), read from cache at 0.1× input. Scaled over the ~19-request chat, the measured per-request difference comes to −7,108 tokens, inside the noise: there is no per-request overhead here large enough to compound. What does grow fast is tool output: every result stays in the context and is re-read on every later request, so a verbose tool call early in a chat is paid ~19 times. A client that doesn't defer schemas pays the full schemas on every request instead; that case isn't measured here.\n\nTAKEAWAY: on current Claude Code an idle MCP server is cheap; MCP vs CLI was within noise on all three tasks. Pick by what returns smaller results: trimmed gh/psql output or a lean MCP tool. Unload servers you don't use.\n\nRule of thumb: anything added to every request costs (tokens × requests) and grows with the chat; anything that removes a request saves that request's whole context, which is largest late in a chat. Cache reads bill at 0.1× input, cache writes at 2×."
     }
   ],
   "scoreboard": {
@@ -103,13 +133,27 @@
       },
       {
         "label": "CLI vs MCP",
-        "off": "147,822",
-        "on": "147,624",
-        "saved": "198 (0%)*",
+        "off": "132,571",
+        "on": "132,711",
+        "saved": "-140 (0%)*",
+        "win": false
+      },
+      {
+        "label": "CLI vs MCP (long answer)",
+        "off": "70,442",
+        "on": "68,821",
+        "saved": "1,621 (2%)*",
+        "win": false
+      },
+      {
+        "label": "CLI vs MCP (long chat)",
+        "off": "617,198",
+        "on": "657,085",
+        "saved": "-39,887 (-6%)*",
         "win": false
       }
     ],
-    "footnote": "Total tokens (input + output + cache read + cache write), median of 3 runs per side; Headroom, Caveman, Config, CLI vs MCP = task 1 (small edit); Headroom (long answer), Caveman (long answer) = task 6 (written code review, no edits); Headroom (long chat), Caveman (long chat) = task 7 (6-message conversation in one session).  Headroom = traffic routed through headroom proxy (Bedrock passthrough to the local gateway), --mode token, --no-optimize vs optimizing.  * OFF and ON ranges overlap — within run-to-run noise.",
+    "footnote": "Total tokens (input + output + cache read + cache write), median of 3 runs per side; Headroom, Caveman, Config, CLI vs MCP = task 1 (small edit); Headroom (long answer), Caveman (long answer), CLI vs MCP (long answer) = task 6 (written code review, no edits); Headroom (long chat), Caveman (long chat), CLI vs MCP (long chat) = task 7 (6-message conversation in one session).  Headroom = traffic routed through headroom proxy (Bedrock passthrough to the local gateway), --mode token, --no-optimize vs optimizing.  * OFF and ON ranges overlap — within run-to-run noise.",
     "sub": "Same query, each optimization OFF then ON (Sonnet). Each row is one isolated A/B, filled from results/.",
     "callout": {
       "head": "Same query,\noff vs on",
@@ -134,13 +178,13 @@
     },
     {
       "head": "Long chats live on the prompt cache",
-      "big": "94% cache reads",
-      "body": "Reads bill at 1/10 of input: $0.55 per 6-message chat cached vs $2.49 uncached (−78%), Sonnet list price. Keep the prefix stable; compact, don't restart."
+      "big": "95% cache reads",
+      "body": "Reads bill at 0.1× input: $0.42 per 6-message chat cached vs $1.91 uncached (−78%), Sonnet list price. Keep the prefix stable; compact, don't restart."
     },
     {
-      "head": "CLI vs MCP: within noise",
-      "big": "0%",
-      "body": "Both MCP servers connected, yet their schemas didn't move the total on this task."
+      "head": "CLI vs MCP: chat, within noise",
+      "big": "+6% tokens",
+      "body": "edit 0%*, review −2%*, chat +6%* (* = noise). With MCP loaded, input per request differed by −374 tokens: names only, schemas load on use."
     },
     {
       "head": "Headroom: the edit cost more",

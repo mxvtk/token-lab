@@ -1,0 +1,61 @@
+{
+  "label": "cli_long__on",
+  "mode": "cli-vs-mcp",
+  "model": "sonnet",
+  "claude_version": "2.1.332 (Claude Code)",
+  "cost_accounting": "session-delta",
+  "extra_mcp_servers": [
+    "observability-data"
+  ],
+  "recorded_at": "2026-11-25T22:56:38.281Z",
+  "rows": [
+    {
+      "task": 6,
+      "reps": 3,
+      "median_total_tokens": 68821,
+      "min_total_tokens": 67951,
+      "max_total_tokens": 70286,
+      "median_output_tokens": 3358,
+      "median_cost_usd": 0.150549,
+      "runs": [
+        {
+          "input_tokens": 4,
+          "output_tokens": 4273,
+          "cache_read_input_tokens": 51331,
+          "cache_creation_input_tokens": 14678,
+          "total_tokens": 70286,
+          "cost_usd": 0.1675743,
+          "num_turns": 3,
+          "permission_denials": 0
+        },
+        {
+          "input_tokens": 4,
+          "output_tokens": 2769,
+          "cache_read_input_tokens": 51327,
+          "cache_creation_input_tokens": 13851,
+          "total_tokens": 67951,
+          "cost_usd": 0.14005109999999998,
+          "num_turns": 3,
+          "permission_denials": 0
+        },
+        {
+          "input_tokens": 4,
+          "output_tokens": 3358,
+          "cache_read_input_tokens": 51331,
+          "cache_creation_input_tokens": 14128,
+          "total_tokens": 68821,
+          "cost_usd": 0.1505493,
+          "num_turns": 3,
+          "permission_denials": 0
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "total_tokens": 68821,
+    "min_total_tokens": 67951,
+    "max_total_tokens": 70286,
+    "output_tokens": 3358,
+    "cost_usd": 0.150549
+  }
+}
