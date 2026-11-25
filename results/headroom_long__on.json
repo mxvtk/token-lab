@@ -1,53 +1,58 @@
 {
   "label": "headroom_long__on",
   "mode": "headroom-proxy-bedrock",
+  "model": "sonnet",
+  "claude_version": "2.1.332 (Claude Code)",
   "cost_accounting": "session-delta",
-  "recorded_at": "2026-11-25T16:25:32.567Z",
+  "recorded_at": "2026-11-25T21:34:48.490Z",
   "rows": [
     {
       "task": 6,
       "reps": 3,
-      "median_total_tokens": 78616,
-      "min_total_tokens": 77114,
-      "max_total_tokens": 119157,
-      "median_output_tokens": 4152,
-      "median_cost_usd": 0.181356,
+      "median_total_tokens": 79651,
+      "min_total_tokens": 78213,
+      "max_total_tokens": 120724,
+      "median_output_tokens": 5353,
+      "median_cost_usd": 0.209989,
       "runs": [
         {
-          "input_tokens": 4,
-          "output_tokens": 3697,
-          "cache_read_input_tokens": 55191,
-          "cache_creation_input_tokens": 18222,
-          "total_tokens": 77114,
-          "cost_usd": 0.18135630000000003,
-          "num_turns": 3
-        },
-        {
-          "input_tokens": 4,
-          "output_tokens": 5303,
-          "cache_read_input_tokens": 55187,
-          "cache_creation_input_tokens": 18122,
-          "total_tokens": 78616,
-          "cost_usd": 0.16407059999999998,
-          "num_turns": 3
-        },
-        {
           "input_tokens": 5,
-          "output_tokens": 4152,
-          "cache_read_input_tokens": 94200,
-          "cache_creation_input_tokens": 20800,
-          "total_tokens": 119157,
-          "cost_usd": 0.5748606,
-          "num_turns": 4
+          "output_tokens": 5595,
+          "cache_read_input_tokens": 94339,
+          "cache_creation_input_tokens": 20785,
+          "total_tokens": 120724,
+          "cost_usd": 0.569118,
+          "num_turns": 4,
+          "permission_denials": 0
+        },
+        {
+          "input_tokens": 4,
+          "output_tokens": 4604,
+          "cache_read_input_tokens": 55325,
+          "cache_creation_input_tokens": 18280,
+          "total_tokens": 78213,
+          "cost_usd": 0.19534949999999998,
+          "num_turns": 3,
+          "permission_denials": 0
+        },
+        {
+          "input_tokens": 4,
+          "output_tokens": 5353,
+          "cache_read_input_tokens": 55453,
+          "cache_creation_input_tokens": 18841,
+          "total_tokens": 79651,
+          "cost_usd": 0.2099889,
+          "num_turns": 3,
+          "permission_denials": 0
         }
       ]
     }
   ],
   "totals": {
-    "total_tokens": 78616,
-    "min_total_tokens": 77114,
-    "max_total_tokens": 119157,
-    "output_tokens": 4152,
-    "cost_usd": 0.181356
+    "total_tokens": 79651,
+    "min_total_tokens": 78213,
+    "max_total_tokens": 120724,
+    "output_tokens": 5353,
+    "cost_usd": 0.209989
   }
 }

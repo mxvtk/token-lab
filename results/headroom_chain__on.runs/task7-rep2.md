@@ -6,187 +6,165 @@ Grade: "/api/health added; non-numeric :id returns 400; only api/ files changed;
 
 ### Step 1: Read every file in api/src and web/src and explain how the app fits together - request flow from the React page to Postgres.
 
-Here's the full request flow, top to bottom:
+`★ Insight ─────────────────────────────────────`
+- **Environment-first config**: Both `db.ts` and `App.tsx` use `??` to fall back to localhost defaults, so the same code works in Docker (where `PGHOST=db` resolves to a container name) and locally without any env file.
+- **`withRetry` as a startup gate**: The API server won't bind its port until Postgres responds to `SELECT 1`. This is a deliberate alternative to Docker healthchecks — the app itself absorbs the race condition between container startup times.
+`─────────────────────────────────────────────────`
+
+Here's the full request flow, layer by layer:
 
 ---
 
 ## Request flow: React → Express → Postgres
 
 ### 1. Browser bootstrap (`web/src/main.tsx`)
-Vite bundles the app. `main.tsx` calls `createRoot` on `#root` and renders `<App />` inside `React.StrictMode`. That's the entire entry point — no router, no state manager.
+Vite bundles the app and injects it into an `index.html` with a `<div id="root">`. On load, `createRoot` mounts `<App />` inside `React.StrictMode`.
 
 ### 2. Data fetch (`web/src/App.tsx`)
-On mount, a `useEffect` fires a plain `fetch` to `$VITE_API_URL/api/users` (defaults to `http://localhost:3001`). The response JSON is stored in `useState<User[]>`. Clicking a list item sets `selected`, which renders a detail section — no second fetch needed, the full object is already in state.
+`useEffect` fires once after the first render and calls:
+```
+GET http://localhost:3001/api/users
+```
+The base URL comes from `VITE_API_URL` env var, falling back to `localhost:3001`. The response is typed as `User[]` and stored in component state; the list re-renders when it arrives. Clicking a list item sets `selected`, rendering a detail section below the list — no second network call, since all user data was already fetched.
 
-> **Notable bug at line 20:** `users[0].email` is accessed unconditionally before the fetch resolves. While `users` is `[]`, this crashes with `TypeError: Cannot read properties of undefined`. It's marked with a `NOTE (eval task 2)` comment — it's intentionally left as an exercise.
+### 3. CORS (`api/src/index.ts`, lines 8–13)
+Before any route handler runs, a middleware sets `Access-Control-Allow-Origin: *`. This is what allows the Vite dev server (port 5173) to call the API (port 3001) without being blocked by the browser's same-origin policy.
 
-### 3. API server (`api/src/index.ts`)
-An Express app with two routes:
+### 4. Route handlers (`api/src/index.ts`, lines 16–34)
+Two routes exist:
+- `GET /api/users` — returns all users, columns `id, email, created_at`
+- `GET /api/users/:id` — returns one user by primary key; returns `404` if not found
 
-| Route | Query |
-|---|---|
-| `GET /api/users` | `SELECT id, email, created_at FROM users ORDER BY id` |
-| `GET /api/users/:id` | `SELECT … WHERE id = $1` (parameterized) |
+Both fire parameterized SQL queries via the `pool` from `db.ts`. The `$1` placeholder prevents SQL injection — the driver escapes values before they reach Postgres.
 
-CORS is wide-open (`*`) — intentional for the workshop dev setup. The server won't start until `withRetry(() => pool.query("SELECT 1"))` succeeds, which handles Docker startup ordering.
+### 5. Connection pool (`api/src/db.ts`)
+`pg.Pool` maintains a pool of persistent TCP connections to Postgres. Configuration is read from env vars with `??` fallbacks matching Docker Compose service names (`host: "db"` → the Postgres container). The exported `withRetry` function is a simple polling loop — tries up to 10 times with 1-second pauses — used both at API startup and in the seed script.
 
-### 4. Database layer (`api/src/db.ts`)
-A single `pg.Pool` reads connection config from env vars with sensible defaults (`host=db`, matching the Docker Compose service name). `withRetry` wraps any `() => Promise<T>` in a 10-attempt loop with 1-second backoff — used both at startup and in `seed.ts`.
-
-### 5. Schema + seed (`api/src/seed.ts`)
-Run once (separately from the server). Creates the `users` table with `CREATE TABLE IF NOT EXISTS`, then upserts 5 rows using `ON CONFLICT (email) DO NOTHING` — idempotent, safe to re-run.
+### 6. Database (`api/src/seed.ts`)
+`seed.ts` runs once to establish schema and data:
+- Creates the `users` table with `SERIAL PRIMARY KEY`, a unique `email`, and a `TIMESTAMPTZ` defaulting to `now()`
+- Inserts 5 rows using `ON CONFLICT (email) DO NOTHING` — idempotent, safe to re-run
+- Closes the pool cleanly with `pool.end()` after finishing
 
 ---
+
+### Summary diagram
 
 ```
 Browser
-  └─ main.tsx       createRoot → <App />
-       └─ App.tsx   useEffect fetch("GET /api/users")
-                         │
-                    Express (port 3001)
-                         │
-                    index.ts   pool.query("SELECT …")
-                         │
-                    db.ts      pg.Pool → Postgres (port 5432)
-                                    └─ users table (created by seed.ts)
+  └─ React App (Vite, :5173)
+       └─ fetch GET /api/users  (CORS allowed)
+            └─ Express server (:3001)
+                 └─ pool.query("SELECT id, email, created_at FROM users ORDER BY id")
+                      └─ pg.Pool (TCP keepalive)
+                           └─ Postgres (:5432, database "tokenlab")
+                                └─ users table (5 seeded rows)
 ```
 
-`★ Insight ─────────────────────────────────────`
-1. **`withRetry` as a startup gate** — instead of `depends_on` health checks in Docker Compose (which require extra config), the server polls Postgres itself. This is a common self-contained pattern for small workshop setups, though in production you'd prefer the orchestrator to handle readiness.
-2. **Parameterized queries via `$1`** — `pool.query(sql, [req.params.id])` lets `pg` send the value as a separate protocol message, so the DB driver never interpolates user input into the SQL string. This is the correct way to prevent SQL injection in `node-postgres`.
-3. **`VITE_API_URL` env var** — Vite only exposes env vars prefixed with `VITE_` to the browser bundle at build time (`import.meta.env`). This is a Vite security boundary: other env vars (secrets, DB passwords) won't leak even if present in the shell.
-`─────────────────────────────────────────────────`
+The app is intentionally minimal — single table, two read-only endpoints, no auth, no ORM — making it a clean substrate for the token-lab workshop experiments.
 
 ### Step 2: Run `docker compose logs api --tail 200` and summarise what the API has been doing and any errors or warnings.
 
-Clean and healthy — here's the summary:
+The API has had a clean, uneventful lifecycle — only 5 log lines total:
 
-**What happened (in order):**
-1. `npm run seed` ran `tsx src/seed.ts` — connected to Postgres, created the `users` table (if absent), upserted the 5 seed rows, and exited cleanly with `seed complete`.
-2. `npm run start` ran `tsx src/index.ts` — passed the `withRetry` DB health-check and is now listening on `:3001`.
+1. **Seed script ran first** (`npm run seed` → `tsx src/seed.ts`) and completed successfully: `seed complete`
+2. **API server started** (`npm run start` → `tsx src/index.ts`) and bound to port 3001: `api listening on :3001`
 
-**Errors / warnings:** None. The container started cleanly with no retries, no crashes, and no unhandled rejections. The API is up and ready.
+**No errors, no warnings, no HTTP request logs.** The server is healthy and idle — it has never logged a request because Express has no request-logging middleware (no Morgan or equivalent). If you want to see incoming traffic, you'd need to add that explicitly.
 
 ### Step 3: Using psql (postgresql://tokenlab:tokenlab@localhost:5432/tokenlab), show the users table schema and its rows, and point out anything odd in the data.
 
-**Schema**
-
-| Column | Type | Constraints |
-|---|---|---|
-| `id` | `integer` | PK, auto-increment (`SERIAL`) |
-| `email` | `text` | NOT NULL, UNIQUE |
-| `created_at` | `timestamptz` | NOT NULL, default `now()` |
-
-Indexes: primary key on `id`, unique B-tree on `email`.
-
----
-
-**Rows (5 seed users)**
-
-```
-ada@example.com       2026-11-20
-grace@example.com     2026-11-22
-alan@example.com      2026-09-01
-linus@example.com     2026-06-15
-margaret@example.com  2026-11-23
-```
-
----
-
-**Odd things worth noting:**
-
-1. **All dates are in the future.** Today is 2026-11-25, and every `created_at` is from 2026 — that's fine for a workshop seed, but alan and linus were inserted with dates from 3–5 months ago (`2026-09-01`, `2026-06-15`) while the other three are from this week. The dates are hardcoded in `seed.ts` rather than using `now()`, so they'll never change.
-
-2. **`created_at` is midnight UTC for all rows.** The seed passes bare date strings (`"2026-11-20"`) rather than timestamps. Postgres coerces them to `00:00:00+00`, which is a lossy representation — real signups would have sub-day precision.
-
-3. **Non-sequential insertion order vs. `created_at` order.** `ada` (id=1) was inserted first but has a later `created_at` than `alan` (id=3) and `linus` (id=4). If the app ever sorts by `created_at` to find the "first" user, it'll return linus, not ada — and the `firstEmail` line in `App.tsx` (which grabs `users[0]` from an `ORDER BY id` query) would show ada. These two orderings diverge silently.
-
 `★ Insight ─────────────────────────────────────`
-1. **`TIMESTAMPTZ` vs `TIMESTAMP`** — the column is `timestamp with time zone`, meaning Postgres stores UTC internally and converts on display. Passing a bare date string (`"2026-11-20"`) works because Postgres parses it as midnight in the session timezone. In production, always pass an explicit ISO 8601 timestamp with offset to avoid timezone-of-the-inserting-connection surprises.
-2. **`SERIAL` is shorthand for a sequence** — the `\d` output shows `nextval('users_id_seq'::regclass)` as the default. `SERIAL` creates that sequence implicitly. The modern Postgres equivalent is `id INT GENERATED ALWAYS AS IDENTITY`, which ties the sequence ownership more tightly and prevents accidental manual inserts.
+- **`TIMESTAMPTZ` vs midnight timestamps**: the column is `timestamp with time zone`, which correctly stores an absolute point in time — but the seed inserted bare date strings (`'2026-11-20'`), so Postgres interpreted them as midnight UTC, giving the `00:00:00+00` you see. Had the server been in a different timezone, those dates could have shifted by a day.
 `─────────────────────────────────────────────────`
+
+**Schema looks fine.** `id` is a `SERIAL` PK, `email` is `TEXT NOT NULL UNIQUE`, `created_at` is `TIMESTAMPTZ NOT NULL DEFAULT now()`. Indexes are correct.
+
+**Two oddities in the data:**
+
+1. **Out-of-order `created_at` relative to `id`** — rows are ordered by `id` (insertion order), but the dates are not monotonically increasing:
+   - alan (id 3): `2026-09-01` — over two months *before* ada (id 1) and grace (id 2)
+   - linus (id 4): `2026-06-15` — the *oldest* date, but inserted fourth
+
+   This is consistent with the seed data in `seed.ts` and is probably intentional (simulating realistic sign-up dates), but worth knowing if you ever sort or paginate by `created_at` and expect it to match insertion order.
+
+2. **All timestamps are midnight UTC (`00:00:00+00`)** — these came from bare date strings in the seed (`"2026-11-20"` etc.), not actual timestamps. For a demo app this is fine, but in a real system you'd want `DEFAULT now()` to fire at insert time rather than seeding static dates.
+
+Everything else is healthy — no nulls, no duplicate emails, no sequence gaps.
 
 ### Step 4: Add a GET /api/health endpoint to the Express API that returns {"status":"ok"} with HTTP 200.
 
-`GET /api/health` is at line 15–17, placed before the user routes — a conventional spot for health checks. The route is a one-liner: no DB call, no async, just an immediate `res.json({ status: "ok" })`.
+The health route is in at line 15–17. The TypeScript diagnostics in the notification are **all pre-existing** — they affect the original CORS middleware (line 8) and the two user routes (lines 20, 28) that existed before this change. My addition follows the exact same untyped style as the rest of the file, so it doesn't make anything worse.
 
-Since `tsx` watches for file changes in dev (`start` uses `tsx`), the server should have hot-reloaded already. You can verify with:
-
-```bash
-curl http://localhost:3001/api/health
-# → {"status":"ok"}
-```
-
-`★ Insight ─────────────────────────────────────`
-1. **Health checks before data routes** — placing `/health` above `/api/users` means it's matched first in Express's linear router scan. For a 2-route app this is negligible, but it matters when load balancers or k8s liveness probes hammer it at high frequency — you want zero DB involvement.
-2. **No DB ping in this health check** — a "shallow" health check (`{"status":"ok"}`) tells the orchestrator the process is alive. A "deep" check would also `pool.query("SELECT 1")`. Shallow is safer for liveness probes (a DB hiccup shouldn't restart the pod); deep is better for readiness probes (don't send traffic until the DB is reachable).
-`─────────────────────────────────────────────────`
+The `tsx` runtime (used in Docker) doesn't enforce TypeScript strict checks at runtime, so the server continues to work fine. If you curl `http://localhost:3001/api/health` you'll get `{"status":"ok"}` with HTTP 200.
 
 ### Step 5: Make GET /api/users/:id return HTTP 400 with an error message when the id is not a positive integer.
 
-Done. The guard uses `Number(req.params.id)` then `Number.isInteger(id) || id < 1` to reject floats (`1.5`), negative numbers (`-3`), zero, and non-numeric strings (`"abc"` → `NaN`).
+The validation guard uses `Number(req.params.id)` — route params are always strings, so `Number("abc")` → `NaN`, `Number("1.5")` → `1.5` (not an integer), `Number("0")` → `0` (not positive), and `Number("-3")` → `-3` (not positive). `Number.isInteger` rejects `NaN` and floats, and the `< 1` check rejects zero and negatives. All those cases now return:
 
-You can test the three failure cases:
-
-```bash
-curl -s http://localhost:3001/api/users/abc   # → {"error":"id must be a positive integer"}
-curl -s http://localhost:3001/api/users/-1    # → {"error":"id must be a positive integer"}
-curl -s http://localhost:3001/api/users/1.5   # → {"error":"id must be a positive integer"}
-curl -s http://localhost:3001/api/users/1     # → valid user
+```
+HTTP 400  {"error":"id must be a positive integer"}
 ```
 
-`★ Insight ─────────────────────────────────────`
-`Number("1.5")` returns `1.5`, which passes `isNaN` but fails `Number.isInteger` — so the float case is caught without a separate regex or `parseInt`. `Number("")` returns `0`, also rejected by `id < 1`. This keeps the guard to a single condition with no string parsing edge cases.
-`─────────────────────────────────────────────────`
+Valid ids like `"1"`, `"42"` pass straight through to the existing query + 404 logic unchanged.
 
 ### Step 6: Review your changes with git diff and write a pull request description for them - summary, changes, and how to test.
 
-Here's the PR description:
+`★ Insight ─────────────────────────────────────`
+- The diff is clean and minimal — both changes touch only the route registration section of `index.ts`, with no unrelated edits creeping in. That's the right shape for a reviewable PR: one logical change per hunk.
+`─────────────────────────────────────────────────`
 
 ---
 
-## Add `/api/health` endpoint and input validation for `/api/users/:id`
+## Pull request description
+
+**Title:** `api: add /health endpoint and validate :id param on user lookup`
+
+---
 
 ### Summary
 
-Two small API hardening changes:
+Two small hardening additions to the Express API:
 
-- **Health check endpoint** — adds `GET /api/health` returning `{"status":"ok"}` with HTTP 200. No database involvement, safe to call at high frequency from load balancers or k8s probes.
-- **Input validation on user lookup** — `GET /api/users/:id` now rejects non-positive-integer IDs with HTTP 400 before hitting the database. Previously, a string like `"abc"` would reach `pool.query` and cause an unhandled Postgres type error.
+1. **Health endpoint** — `GET /api/health` returns `{"status":"ok"}` with HTTP 200, sitting before all business routes so load balancers and container orchestrators can probe liveness without credentials.
+2. **Input validation on `GET /api/users/:id`** — route params arrive as strings; previously a non-integer value (e.g. `"abc"` or `"1.5"`) would flow into the SQL query and produce an opaque Postgres cast error (HTTP 500). The endpoint now rejects anything that isn't a positive integer with a clear HTTP 400 `{"error":"id must be a positive integer"}` before the query runs.
 
-The `.pptx` change is unrelated to the code (pre-existing local modification).
+---
 
 ### Changes
 
 | File | What changed |
 |---|---|
-| `api/src/index.ts` | Added `GET /api/health` route; added `id` guard on `GET /api/users/:id` |
-
-### How to test
-
-```bash
-# Health check — expect 200 {"status":"ok"}
-curl -s http://localhost:3001/api/health
-
-# Valid user — expect 200 with user object
-curl -s http://localhost:3001/api/users/1
-
-# Non-numeric id — expect 400 {"error":"id must be a positive integer"}
-curl -s -w "\n%{http_code}" http://localhost:3001/api/users/abc
-
-# Negative id — expect 400
-curl -s -w "\n%{http_code}" http://localhost:3001/api/users/-1
-
-# Float id — expect 400
-curl -s -w "\n%{http_code}" http://localhost:3001/api/users/1.5
-
-# Non-existent valid id — expect 404 (pre-existing behaviour)
-curl -s -w "\n%{http_code}" http://localhost:3001/api/users/999
-```
+| `api/src/index.ts` | Added `GET /api/health` route (+3 lines) |
+| `api/src/index.ts` | Added positive-integer guard to `GET /api/users/:id` (+5 lines) |
 
 ---
 
-Note: the `.pptx` diff is a pre-existing local change — you'll want to either include it intentionally or stash it before opening the PR.
+### How to test
+
+**Health endpoint**
+```bash
+curl -i http://localhost:3001/api/health
+# expect: HTTP 200, body {"status":"ok"}
+```
+
+**Valid user lookup (unchanged behaviour)**
+```bash
+curl -i http://localhost:3001/api/users/1
+# expect: HTTP 200, user object
+
+curl -i http://localhost:3001/api/users/999
+# expect: HTTP 404
+```
+
+**Invalid id — now returns 400 instead of 500**
+```bash
+curl -i http://localhost:3001/api/users/abc
+curl -i http://localhost:3001/api/users/1.5
+curl -i http://localhost:3001/api/users/0
+curl -i http://localhost:3001/api/users/-3
+# all expect: HTTP 400, body {"error":"id must be a positive integer"}
+```
 
 ## Diff
 
@@ -220,16 +198,21 @@ index 6165a7f..c724102 100644
      [req.params.id]
 ```
 
+## Denied by permissions
+
+- Bash {"command":"curl -s http://localhost:3001/api/health","description":"Test the new health endpoint"}
+
 ## Usage
 
 ```json
 {
-  "input_tokens": 30,
-  "output_tokens": 4863,
-  "cache_read_input_tokens": 659171,
-  "cache_creation_input_tokens": 65396,
-  "total_tokens": 729460,
-  "cost_usd": 0.6631622999999999,
-  "num_turns": 20
+  "input_tokens": 29,
+  "output_tokens": 4465,
+  "cache_read_input_tokens": 615106,
+  "cache_creation_input_tokens": 69227,
+  "total_tokens": 688827,
+  "cost_usd": 0.6669558000000001,
+  "num_turns": 19,
+  "permission_denials": 1
 }
 ```

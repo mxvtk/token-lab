@@ -59,13 +59,18 @@ to send back to the facilitator.
 
 #### 0. What the machine needs
 - **Docker Desktop**, running — or your own api + Postgres (see Quick start, `NO_DOCKER=1`).
-  Ports **5173** (web), **3001** (api), **5432** (Postgres) are used by the app, and **8788**
-  (Headroom proxy) must be free; `preflight.sh` checks it.
+  Ports **5173** (web), **3001** (api), **5432** (Postgres) are used by the app; with
+  Headroom installed, **8788** (its proxy) must be free too. `preflight.sh` checks them.
 - **Node 20+**.
 - **Homebrew** (macOS) — `setup.sh` uses it to install `uv`, `gh` and `psql` if missing.
-- **Headroom** — `setup.sh` installs it the [official way](https://github.com/headroomlabs-ai/headroom#install):
-  `uv tool install --python 3.13 "headroom-ai[all]"` (uv brings its own Python 3.13).
-- **Claude Code** (`claude` on PATH), logged in with **claude.ai or an Anthropic API key**.
+- **Headroom — optional, not needed for the workshop.** The facilitator demos it. Its install
+  can take 20+ minutes, so `setup.sh` skips it and `eval:all` skips the Headroom A/B. To try it
+  at home, see [Try Headroom at home](#try-headroom-at-home).
+- **Claude Code** (`claude` on PATH), a current version, logged in with **claude.ai or an
+  Anthropic API key**. Old versions (2.0.x) lack the plugin commands the eval uses
+  (`plugin list --json`, `plugin install --scope local`) and can't read the community
+  marketplace (`Invalid schema: plugins.N.source`). `setup.sh` runs `claude update` when it
+  finds one.
   Bedrock through a *local* gateway (`ANTHROPIC_BEDROCK_BASE_URL=http://127.0.0.1:…`)
   also works. Vertex, or Bedrock straight to AWS, can't be routed through Headroom —
   the Headroom tests are skipped.
@@ -76,11 +81,13 @@ to send back to the facilitator.
   `setup.sh` adds the marketplace (HTTPS fallback if the SSH clone fails) and, if caveman still
   isn't available, prints why. By hand: `claude plugin marketplace add https://github.com/anthropics/claude-plugins-community.git`.
   Not `caveman@anthropic-plugin-directory` — that is a different plugin with the same name.
+  If you already have a `caveman` from another marketplace (e.g. `caveman@caveman`), the eval
+  turns it off for both sides, in this repo only, and turns it back on afterwards.
 
 #### 1. Get the repo and set up
 ```bash
 git clone https://github.com/mxvtk/token-lab && cd token-lab
-./setup.sh       # docker up, npm install, Headroom (uv), caveman check, gh/psql, claude auth
+./setup.sh       # docker up, npm install, Claude Code version, caveman check, gh/psql, claude auth
 ./preflight.sh   # should end with "All green"
 ```
 Every `setup.sh` line should be ✓ — note any `!` line. Open http://localhost:5173: you
@@ -116,8 +123,8 @@ The ON side now also denies reads of `results/` (tracked: prior runs' answers an
 which Grep would otherwise find), `node_modules`, `dist` and lockfiles via
 `permissions.deny`. That version hasn't been measured yet.
 
-Check:
-1. The Headroom section ran (no `⤼ SKIP Headroom`).
+`⤼ SKIP Headroom A/B` is expected unless you installed Headroom. If you did, check:
+1. The Headroom section ran.
 2. Every Headroom row shows **M > N**, and every `__on` row shows **K > 0**. With K = 0 on
    an ON row the script refuses to record it and says why.
 3. The `saved`/`compress` metric lines grew under `headroom_…__on` and did **not** grow
@@ -143,6 +150,18 @@ npm run eval:all -- --only headroom --long --task 1
 npm run eval:all -- --long --task 1                  # everything
 npm run eval:all -- --only caveman --rows caveman_chain   # a single row
 ```
+
+#### Try Headroom at home
+The workshop only demos Headroom. To measure it yourself:
+```bash
+./setup.sh --with-headroom                       # official install: uv tool install --python 3.13 "headroom-ai[all]" (20+ min)
+npm run eval:all -- --only headroom --task 1      # ≈ $1.20
+npm run eval:all -- --only headroom --long --task 1   # adds the long-answer and long-chat rows, ≈ $6.25
+```
+Port 8788 must be free (`./preflight.sh` checks it once Headroom is installed). Behind a
+corporate SSL proxy, see the [install notes](https://github.com/headroomlabs-ai/headroom#install).
+Compare with the facilitator's numbers in `results/headroom*.json`. On task 1 Headroom used
+*more* tokens there, so measure before you keep it.
 
 #### 5. Other tasks (not measured yet)
 - `npm run eval:all` with no `--task` runs tasks 1–4 on every A/B. Tasks 2–4 are not in
@@ -181,11 +200,11 @@ Overlapping OFF/ON ranges print as **within noise** — that is a result, not a 
 #### Cost (facilitator's recorded runs, Sonnet, 3 reps per side; sum of all reps per row)
 | Run | Recorded cost |
 |---|---|
-| One A/B row on task 1 | $0.44–$0.49 per row |
-| `eval:all -- --task 1` (8 rows) | ≈ $3.78 |
-| `--only headroom --long --task 1` (6 rows) | ≈ $6.51 |
-| Headroom long (task 6), per row | $0.87 OFF / $0.92 ON |
-| Headroom chat (task 7), per row | $1.55 OFF / $2.20 ON |
+| One A/B row on task 1 | $0.44–$0.60 per row |
+| `eval:all -- --task 1` (8 rows) | ≈ $4.01 |
+| `--only headroom --long --task 1` (6 rows) | ≈ $6.25 |
+| Headroom long (task 6), per row | $0.59 OFF / $0.97 ON |
+| Headroom chat (task 7), per row | $1.53 OFF / $1.96 ON |
 | `preflight.sh` / `setup.sh` auth check | one tiny `claude -p` call (a few cents) |
 
 The Caveman long/chat rows were recorded before the per-step cost fix (their files lack
@@ -194,9 +213,10 @@ corrected figure yet.
 
 ### Setup is scripted too
 ```bash
-./setup.sh      # docker up, npm install, install Headroom, enable caveman, gh/psql, check auth
+./setup.sh                  # docker up, npm install, Claude Code version, caveman check, gh/psql, auth
+./setup.sh --with-headroom  # the same, plus Headroom (slow)
 ```
-Headroom is installed with `uv tool install --python 3.13 "headroom-ai[all]"` into
+With `--with-headroom`, Headroom is installed with `uv tool install --python 3.13 "headroom-ai[all]"` into
 `~/.local/bin`. `eval:all` finds it there even before a new shell picks up the PATH; set
 `HEADROOM_BIN` to use another copy.
 
@@ -214,7 +234,7 @@ so the runner records only each step's increase. Files written that way carry
 `"cost_accounting": "session-delta"`; the deck ignores the cost of files without it.
 
 ## The four optimizations (workshop flow)
-1. **Headroom** (demo) — the [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) proxy; compresses tool outputs/logs/JSON before they reach the model (`headroom wrap`).
+1. **Headroom** (demo only; [try it at home](#try-headroom-at-home)) — the [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) proxy; compresses tool outputs/logs/JSON before they reach the model (`headroom wrap`).
 2. **Caveman plugin** (demo) — [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (`caveman@claude-community`); compresses the model's own output.
 3. **Config** (hands-on) — add a tight `CLAUDE.md` + `permissions.deny` in `.claude/settings.json`
    (Claude Code does not read `.claudeignore`). Reference in `config/`.

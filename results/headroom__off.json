@@ -1,53 +1,58 @@
 {
   "label": "headroom__off",
   "mode": "headroom-proxy-bedrock",
+  "model": "sonnet",
+  "claude_version": "2.1.332 (Claude Code)",
   "cost_accounting": "session-delta",
-  "recorded_at": "2026-11-25T16:10:06.096Z",
+  "recorded_at": "2026-11-25T21:20:05.153Z",
   "rows": [
     {
       "task": 1,
       "reps": 3,
-      "median_total_tokens": 147817,
-      "min_total_tokens": 147789,
-      "max_total_tokens": 147931,
-      "median_output_tokens": 899,
-      "median_cost_usd": 0.161573,
+      "median_total_tokens": 148416,
+      "min_total_tokens": 147501,
+      "max_total_tokens": 148501,
+      "median_output_tokens": 878,
+      "median_cost_usd": 0.161955,
       "runs": [
         {
           "input_tokens": 8,
-          "output_tokens": 899,
-          "cache_read_input_tokens": 128666,
-          "cache_creation_input_tokens": 18244,
-          "total_tokens": 147817,
-          "cost_usd": 0.1615728,
-          "num_turns": 4
+          "output_tokens": 928,
+          "cache_read_input_tokens": 109794,
+          "cache_creation_input_tokens": 37771,
+          "total_tokens": 148501,
+          "cost_usd": 0.2735082,
+          "num_turns": 4,
+          "permission_denials": 0
         },
         {
           "input_tokens": 8,
-          "output_tokens": 764,
-          "cache_read_input_tokens": 128731,
-          "cache_creation_input_tokens": 18286,
-          "total_tokens": 147789,
-          "cost_usd": 0.15981930000000003,
-          "num_turns": 4
+          "output_tokens": 805,
+          "cache_read_input_tokens": 129081,
+          "cache_creation_input_tokens": 18522,
+          "total_tokens": 148416,
+          "cost_usd": 0.1619553,
+          "num_turns": 4,
+          "permission_denials": 0
         },
         {
           "input_tokens": 8,
-          "output_tokens": 904,
-          "cache_read_input_tokens": 128739,
-          "cache_creation_input_tokens": 18280,
-          "total_tokens": 147931,
-          "cost_usd": 0.16188570000000002,
-          "num_turns": 4
+          "output_tokens": 878,
+          "cache_read_input_tokens": 128444,
+          "cache_creation_input_tokens": 18171,
+          "total_tokens": 147501,
+          "cost_usd": 0.1607532,
+          "num_turns": 4,
+          "permission_denials": 0
         }
       ]
     }
   ],
   "totals": {
-    "total_tokens": 147817,
-    "min_total_tokens": 147789,
-    "max_total_tokens": 147931,
-    "output_tokens": 899,
-    "cost_usd": 0.161573
+    "total_tokens": 148416,
+    "min_total_tokens": 147501,
+    "max_total_tokens": 148501,
+    "output_tokens": 878,
+    "cost_usd": 0.161955
   }
 }

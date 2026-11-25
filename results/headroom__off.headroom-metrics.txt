@@ -43,23 +43,23 @@ headroom_tokens_saved_total 0
 
 # HELP headroom_persistent_savings_requests_total Durable lifetime requests recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_requests_total counter
-headroom_persistent_savings_requests_total 141
+headroom_persistent_savings_requests_total 298
 
 # HELP headroom_persistent_savings_tokens_saved_total Durable lifetime input tokens saved by proxy compression
 # TYPE headroom_persistent_savings_tokens_saved_total counter
-headroom_persistent_savings_tokens_saved_total 0
+headroom_persistent_savings_tokens_saved_total 43790
 
 # HELP headroom_persistent_savings_input_tokens_total Durable lifetime input tokens recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_tokens_total counter
-headroom_persistent_savings_input_tokens_total 0
+headroom_persistent_savings_input_tokens_total 1266206
 
 # HELP headroom_persistent_savings_input_cost_usd_total Durable lifetime input spend in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_cost_usd_total counter
-headroom_persistent_savings_input_cost_usd_total 0.0
+headroom_persistent_savings_input_cost_usd_total 3.79865
 
 # HELP headroom_persistent_savings_compression_savings_usd_total Durable lifetime compression savings in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_compression_savings_usd_total counter
-headroom_persistent_savings_compression_savings_usd_total 0.0
+headroom_persistent_savings_compression_savings_usd_total 0.13137
 
 # HELP headroom_latency_ms_sum Sum of request latencies in milliseconds
 # TYPE headroom_latency_ms_sum counter
@@ -179,27 +179,27 @@ headroom_tokens_saved_total 0
 
 # HELP headroom_persistent_savings_requests_total Durable lifetime requests recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_requests_total counter
-headroom_persistent_savings_requests_total 153
+headroom_persistent_savings_requests_total 310
 
 # HELP headroom_persistent_savings_tokens_saved_total Durable lifetime input tokens saved by proxy compression
 # TYPE headroom_persistent_savings_tokens_saved_total counter
-headroom_persistent_savings_tokens_saved_total 0
+headroom_persistent_savings_tokens_saved_total 43790
 
 # HELP headroom_persistent_savings_input_tokens_total Durable lifetime input tokens recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_tokens_total counter
-headroom_persistent_savings_input_tokens_total 0
+headroom_persistent_savings_input_tokens_total 1266206
 
 # HELP headroom_persistent_savings_input_cost_usd_total Durable lifetime input spend in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_cost_usd_total counter
-headroom_persistent_savings_input_cost_usd_total 0.0
+headroom_persistent_savings_input_cost_usd_total 3.79865
 
 # HELP headroom_persistent_savings_compression_savings_usd_total Durable lifetime compression savings in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_compression_savings_usd_total counter
-headroom_persistent_savings_compression_savings_usd_total 0.0
+headroom_persistent_savings_compression_savings_usd_total 0.13137
 
 # HELP headroom_latency_ms_sum Sum of request latencies in milliseconds
 # TYPE headroom_latency_ms_sum counter
-headroom_latency_ms_sum 10365.1
+headroom_latency_ms_sum 10670.88
 
 # HELP headroom_latency_ms_count Count of observed request latencies
 # TYPE headroom_latency_ms_count counter
@@ -207,11 +207,11 @@ headroom_latency_ms_count 12
 
 # HELP headroom_latency_ms_min Minimum observed request latency in milliseconds
 # TYPE headroom_latency_ms_min gauge
-headroom_latency_ms_min 702.46
+headroom_latency_ms_min 752.25
 
 # HELP headroom_latency_ms_max Maximum observed request latency in milliseconds
 # TYPE headroom_latency_ms_max gauge
-headroom_latency_ms_max 1016.17
+headroom_latency_ms_max 1259.35
 
 # HELP headroom_overhead_ms_sum Sum of Headroom processing overhead in milliseconds
 # TYPE headroom_overhead_ms_sum counter

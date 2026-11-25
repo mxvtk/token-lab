@@ -5,19 +5,25 @@ Grade: "No files changed; review lists >=5 distinct issues, each with file:line 
 ## Agent result
 
 `★ Insight ─────────────────────────────────────`
-The two files together are a classic "works in dev, breaks in prod" setup. The logic is correct but the **operational envelope** is completely missing: no error boundaries, no pool health signaling, and no graceful lifecycle management. Every real outage will come from exactly these gaps.
+- Express 4 does **not** automatically forward uncaught errors from `async` route handlers to error middleware — the promise rejects silently, leaving the client hanging. Express 5 fixes this, but only if you're on it.
+- Parameterized queries (`$1`) protect against SQL injection, but they don't protect against invalid types reaching PostgreSQL — the DB still errors, just at the type-cast layer instead.
+- Pool configuration defaults are invisible in code review; explicitly setting `max`, `connectionTimeoutMillis`, and `idleTimeoutMillis` makes capacity decisions auditable.
 `─────────────────────────────────────────────────`
 
 ---
 
-## Production review — `api/src/`
+## Code Review — `api/src/db.ts` and `api/src/index.ts`
 
-### 1. Async route handlers have no error boundary — `index.ts:16`, `index.ts:24`
+---
 
-**Why it matters:** Express 4 does not catch rejected async route handlers. If `pool.query()` throws (DB timeout, cast error, any connection failure), the promise rejection is unhandled. In Node ≥ 15 that crashes the process; in earlier versions the client just hangs until it times out — no 500 is ever sent.
+### 1. **[Correctness] Unhandled async route handlers will silently hang or crash**
 
-```ts
-// fix both handlers the same way
+`index.ts:16–21` and `index.ts:24–34`
+
+Both route handlers are `async` with no `try/catch`. In Express 4, a rejected promise is an unhandled rejection — Express never sees it, so the client gets no response and eventually times out. This affects every DB error: connection loss, query timeout, schema mismatch, etc.
+
+```typescript
+// Every route needs this pattern
 app.get("/api/users", async (_req, res) => {
   try {
     const { rows } = await pool.query(
@@ -31,199 +37,291 @@ app.get("/api/users", async (_req, res) => {
 });
 ```
 
+The alternative is a wrapper once at the top:
+```typescript
+function asyncRoute(fn: (req: express.Request, res: express.Response) => Promise<void>) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    fn(req, res).catch(next);
+  };
+}
+// Then: app.get("/api/users", asyncRoute(async (_req, res) => { ... }));
+```
+
 ---
 
-### 2. No `pool.on("error")` handler — `db.ts:5`
+### 2. **[Security / Correctness] No input validation on `:id`**
 
-**Why it matters:** `pg.Pool` emits an `"error"` event when an *idle* client encounters a network error (the DB server closed the connection while it sat in the pool). Without a listener, Node.js treats it as an uncaught error and crashes the process — even if no request was in flight.
+`index.ts:27`
 
-```ts
-export const pool = new Pool({ ... });
+```typescript
+[req.params.id]   // passed raw to $1
+```
 
-pool.on("error", (err) => {
-  console.error("idle client error:", err);
-  // do NOT rethrow — just log. The pool self-heals on the next acquire.
+A parameterized query prevents SQL injection, but `req.params.id` is a raw string. Sending `/api/users/abc` or `/api/users/0` or `/api/users/99999999999999999999` causes PostgreSQL to throw an invalid integer cast error — which (per issue 1) hangs the client. Explicitly validate before touching the DB:
+
+```typescript
+app.get("/api/users/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    res.status(400).json({ error: "id must be a positive integer" });
+    return;
+  }
+  // ...pool.query(..., [id])
 });
 ```
 
 ---
 
-### 3. Startup `withRetry` rejection is never caught — `index.ts:38`
+### 3. **[Security] Hardcoded default credentials committed to source**
 
-**Why it matters:** If the DB is never reachable, `withRetry` exhausts its attempts and rejects. There is no `.catch()`, so the process either crashes or silently does nothing — it never calls `app.listen()`, so the port is never bound, but the process stays alive and looks healthy to a supervisor. Services like Kubernetes will not restart it because the process is still running.
+`db.ts:8–10`
 
-```ts
+```typescript
+password: process.env.PGPASSWORD ?? "tokenlab",
+```
+
+The literal string `"tokenlab"` is now in git history. If the env var is ever unset in a deployment, the server silently connects with known credentials. Remove the fallback entirely and fail loudly at startup:
+
+```typescript
+const password = process.env.PGPASSWORD;
+if (!password) throw new Error("PGPASSWORD is required");
+
+export const pool = new Pool({ ..., password });
+```
+
+Same applies to `PGUSER` and `PGDATABASE` if they must be set for correctness.
+
+---
+
+### 4. **[Correctness] `withRetry` retries non-transient errors**
+
+`db.ts:15–21`
+
+The catch-all `catch (err)` retries every failure — including authentication errors, bad config, missing database, and pg client bugs. A wrong password will silently retry 10 times, sleeping 10 seconds, before surfacing the actual error. Only transient connectivity errors should be retried:
+
+```typescript
+function isTransient(err: unknown): boolean {
+  const code = (err as { code?: string }).code;
+  // connection refused, server not ready, server reset connection
+  return ["ECONNREFUSED", "ENOTFOUND", "57P03", "08006", "08001"].includes(code ?? "");
+}
+
+for (let i = 0; i < tries; i++) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isTransient(err)) throw err;   // fail fast on non-transient errors
+    lastErr = err;
+    await new Promise((r) => setTimeout(r, 1000 * 2 ** i)); // exponential backoff
+  }
+}
+```
+
+---
+
+### 5. **[Operability] Startup DB failure becomes an unhandled rejection with no exit code**
+
+`index.ts:38–42`
+
+```typescript
+withRetry(() => pool.query("SELECT 1")).then(() => {
+  app.listen(port, ...);
+});
+// no .catch()
+```
+
+If `withRetry` exhausts all retries, the resulting promise rejection is unhandled. Node.js behavior on unhandled rejections varies by version — it may print a warning but continue running (Node < 15) or crash with exit code 1 (Node ≥ 15). Neither is explicit. Orchestrators that watch exit codes need a guaranteed non-zero exit:
+
+```typescript
 withRetry(() => pool.query("SELECT 1"))
   .then(() => {
     app.listen(port, () => console.log(`api listening on :${port}`));
   })
   .catch((err) => {
-    console.error("DB never became ready:", err);
-    process.exit(1); // force restart by supervisor
+    console.error("Database connection failed after retries:", err);
+    process.exit(1);
   });
 ```
 
 ---
 
-### 4. `withRetry` retries permanent errors, not just transient ones — `db.ts:13`
+### 6. **[Security] `Access-Control-Allow-Origin: *` with no OPTIONS handler**
 
-**Why it matters:** The retry loop catches *all* errors. A bad `PGPASSWORD`, a missing database name, or a DNS failure that will never resolve will still spin 10 times with 1-second pauses before surfacing. This turns a 0-second fail-fast into a 10-second mystery delay, and silently retries things that retrying cannot fix.
+`index.ts:9–13`
 
-```ts
-const TRANSIENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "57P03"]);
+The wildcard CORS origin is noted as a workshop convenience, but two additional bugs remain regardless:
 
-export async function withRetry<T>(fn: () => Promise<T>, tries = 10): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (err: any) {
-      if (!TRANSIENT_CODES.has(err?.code)) throw err; // fail fast on permanent errors
-      lastErr = err;
-      await new Promise((r) => setTimeout(r, 1000 * (i + 1))); // exponential back-off
-    }
-  }
-  throw lastErr;
-}
-```
+1. **OPTIONS preflight is never handled.** A browser issuing a preflight `OPTIONS /api/users` gets a `404` (Express finds no matching route), causing the actual request to be blocked.
+2. **`Access-Control-Allow-Headers`** is set but `Access-Control-Allow-Credentials` is not, so cookies/auth headers would silently not work if added later.
 
----
-
-### 5. `:id` param is not validated before hitting the DB — `index.ts:25`
-
-**Why it matters:** `req.params.id` is a raw string from the URL. If it's not a valid integer (e.g., `/api/users/abc` or `/api/users/999999999999999999999`), PostgreSQL throws `invalid input syntax for type integer` or `integer out of range`. Combined with issue #1 (no try/catch), that becomes an unhandled rejection. Even with a try/catch this produces a confusing 500 when a 400 is correct.
-
-```ts
-app.get("/api/users/:id", async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: "id must be a positive integer" });
-    return;
-  }
-  try {
-    const { rows } = await pool.query(
-      "SELECT id, email, created_at FROM users WHERE id = $1",
-      [id]
-    );
-    if (rows.length === 0) {
-      res.status(404).json({ error: "not found" });
-      return;
-    }
-    res.json(rows[0]);
-  } catch (err) {
-    console.error("GET /api/users/:id:", err);
-    res.status(500).json({ error: "internal server error" });
-  }
-});
-```
-
----
-
-### 6. No connection timeout on the pool — `db.ts:5`
-
-**Why it matters:** With no `connectionTimeoutMillis`, a request that arrives when all 10 pool slots are busy waits *indefinitely* for a slot to free. Under load this causes requests to pile up in memory until the process OOMs rather than shedding load with a 503. `idleTimeoutMillis` is also missing, so idle connections are never released back to the DB server.
-
-```ts
-export const pool = new Pool({
-  host: process.env.PGHOST ?? "db",
-  port: Number(process.env.PGPORT ?? 5432),
-  user: process.env.PGUSER ?? "tokenlab",
-  password: process.env.PGPASSWORD ?? "tokenlab",
-  database: process.env.PGDATABASE ?? "tokenlab",
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,  // fail with ETIMEDOUT instead of hanging
-});
-```
-
----
-
-### 7. `PORT` env var not validated — `index.ts:36`
-
-**Why it matters:** `Number("abc")` returns `NaN`. `app.listen(NaN)` does not throw — Node.js silently coerces it to `0`, which picks an arbitrary ephemeral port. The log says `api listening on :NaN` and nothing can reach the service.
-
-```ts
-const rawPort = process.env.PORT ?? "3001";
-const port = parseInt(rawPort, 10);
-if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  console.error(`Invalid PORT: "${rawPort}"`);
-  process.exit(1);
-}
-```
-
----
-
-### 8. No graceful shutdown — `index.ts:38`
-
-**Why it matters:** On `SIGTERM` (every deploy, every `docker stop`, every k8s rolling update), the process dies instantly. In-flight requests are dropped mid-response and the pool is closed without draining. The DB may hold locks or transactions open.
-
-```ts
-const server = app.listen(port, () => console.log(`api listening on :${port}`));
-
-process.on("SIGTERM", () => {
-  server.close(async () => {       // stop accepting new connections
-    await pool.end();              // drain and close all pool connections
-    process.exit(0);
-  });
-});
-```
-
----
-
-### 9. CORS wildcard with no OPTIONS handler — `index.ts:8`
-
-**Why it matters:** `Access-Control-Allow-Origin: *` is intentional here. But there's no `OPTIONS` route handler. When a browser sends a CORS preflight for any non-simple request (e.g., a future `POST` with `Content-Type: application/json`), Express returns 404. The request never reaches the actual handler and the browser shows a CORS error — not a 404 — making it very confusing to debug.
-
-```ts
-// add before the other app.use() calls
+```typescript
 app.options("*", (_req, res) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
+  res.header("Access-Control-Allow-Origin", process.env.CORS_ORIGIN ?? "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE");
   res.sendStatus(204);
 });
 ```
 
+For production, replace `"*"` with an explicit origin from env.
+
 ---
 
-### 10. `GET /api/users` has no pagination — `index.ts:16`
+### 7. **[Security] No body size limit on `express.json()`**
 
-**Why it matters:** `SELECT … FROM users ORDER BY id` with no `LIMIT` returns every row in the table. At scale this is a full table scan, an unbounded JSON payload, and a memory spike on both sides. This is the most common "it was fine in dev" performance cliff.
+`index.ts:5`
 
-```ts
-app.get("/api/users", async (req, res) => {
-  const limit = Math.min(parseInt((req.query.limit as string) ?? "50", 10) || 50, 200);
-  const cursor = parseInt((req.query.after as string) ?? "0", 10) || 0;
-  try {
-    const { rows } = await pool.query(
-      "SELECT id, email, created_at FROM users WHERE id > $1 ORDER BY id LIMIT $2",
-      [cursor, limit]
-    );
-    res.json({ rows, next: rows.length === limit ? rows[rows.length - 1].id : null });
-  } catch (err) { ... }
+```typescript
+app.use(express.json());
+```
+
+The default body size limit in Express is 100 KB for JSON. That's the library default, but it's not enforced explicitly and not visible here. If the default ever changes, or if someone is reading this code to audit attack surface, it looks like there's no limit. Be explicit:
+
+```typescript
+app.use(express.json({ limit: "100kb" }));
+```
+
+---
+
+### 8. **[Performance] `GET /api/users` has no pagination**
+
+`index.ts:17`
+
+```typescript
+"SELECT id, email, created_at FROM users ORDER BY id"
+```
+
+No `LIMIT` or `OFFSET`. With enough users this returns the full table into Node.js memory and streams it all to the client. It will time out or OOM before the client gives up. Even a simple hard cap prevents the worst case:
+
+```typescript
+const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+const offset = parseInt(req.query.offset as string) || 0;
+pool.query(
+  "SELECT id, email, created_at FROM users ORDER BY id LIMIT $1 OFFSET $2",
+  [limit, offset]
+);
+```
+
+---
+
+### 9. **[Performance] Pool has no connection timeout or max configuration**
+
+`db.ts:5–11`
+
+```typescript
+export const pool = new Pool({
+  host: ...,
+  // no max, no connectionTimeoutMillis, no idleTimeoutMillis
+});
+```
+
+`pg`'s default `max` is 10, but it's invisible here. More critically, without `connectionTimeoutMillis`, a request that arrives when all 10 slots are occupied will queue **indefinitely**. Under load this causes requests to pile up in memory:
+
+```typescript
+export const pool = new Pool({
+  host: process.env.PGHOST ?? "db",
+  port: Number(process.env.PGPORT ?? 5432),
+  user: process.env.PGUSER ?? "tokenlab",
+  password: process.env.PGPASSWORD,
+  database: process.env.PGDATABASE ?? "tokenlab",
+  max: 10,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 3_000,   // fail fast if pool is saturated
 });
 ```
 
 ---
 
+### 10. **[Operability] No health/readiness endpoint**
+
+`index.ts` (absent)
+
+Kubernetes liveness and readiness probes, load balancer health checks, and uptime monitors all need an endpoint that:
+- returns `200` when the server can serve traffic (DB reachable)
+- returns `503` when it can't
+
+Without it, a pod with a broken DB connection looks healthy to the orchestrator and continues to receive traffic.
+
+```typescript
+app.get("/health", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "ok" });
+  } catch {
+    res.status(503).json({ status: "unavailable" });
+  }
+});
+```
+
+---
+
+### 11. **[Operability] No request logging**
+
+`index.ts` (absent)
+
+There is no logging middleware. In production you need at minimum method, path, status code, and latency for every request. Without it, any incident investigation is blind. Add a minimal middleware before the routes:
+
+```typescript
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    console.log(
+      JSON.stringify({
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        ms: Date.now() - start,
+      })
+    );
+  });
+  next();
+});
+```
+
+Or use `morgan` / `pino-http` for structured log lines.
+
+---
+
+### 12. **[Performance] Fixed 1-second retry interval with no jitter**
+
+`db.ts:19`
+
+```typescript
+await new Promise((r) => setTimeout(r, 1000));
+```
+
+All retries fire at exactly 1-second intervals. If multiple instances start simultaneously (e.g., a k8s rollout), they all hammer the DB at the same cadence — a thundering herd. Exponential backoff with jitter spreads load:
+
+```typescript
+const delay = Math.min(1000 * 2 ** i, 10_000);           // cap at 10s
+const jitter = Math.random() * 500;                        // ±500 ms
+await new Promise((r) => setTimeout(r, delay + jitter));
+```
+
+---
+
 `★ Insight ─────────────────────────────────────`
-Issues #1, #2, #3 form a cascade: a single DB hiccup can crash the process, and if it doesn't crash, the lack of a `.catch()` on startup means the server silently fails to bind — a pattern that defeats health checks entirely. The `withRetry`-only-at-startup design also means transient errors during normal operation (issues the pool would naturally recover from) are never retried in routes.
+- Issues 1 and 5 are the highest blast-radius ones: a single DB hiccup can silently hang every in-flight request and leave the process in an indeterminate state.
+- Issues 3 and 6 are the most likely to surface in a security audit — credentials in source history are permanent and OPTIONS failures block legitimate browsers from ever reaching the API.
+- The pattern of "no pagination + no error handling + no connection timeout" (issues 1, 8, 9) creates a scenario where a burst of traffic triggers a full-table scan, saturates the connection pool, then those queued requests all hang indefinitely.
 `─────────────────────────────────────────────────`
 
-**Summary by category:**
+**Summary of priorities:**
 
-| # | Severity | Category | File |
-|---|----------|----------|------|
-| 1 | Critical | Error handling | index.ts:16,24 |
-| 2 | Critical | Operability | db.ts:5 |
-| 3 | Critical | Operability | index.ts:38 |
-| 4 | High | Correctness | db.ts:13 |
-| 5 | High | Input validation + security | index.ts:25 |
-| 6 | High | Performance | db.ts:5 |
-| 7 | High | Correctness | index.ts:36 |
-| 8 | High | Operability | index.ts:38 |
-| 9 | Medium | Security / CORS | index.ts:8 |
-| 10 | Medium | Performance | index.ts:16 |
+| # | Category | Severity | File:Line |
+|---|---|---|---|
+| 1 | Correctness | P0 | `index.ts:16,24` |
+| 2 | Security/Correctness | P0 | `index.ts:27` |
+| 5 | Operability | P0 | `index.ts:38` |
+| 3 | Security | P1 | `db.ts:8–10` |
+| 4 | Correctness | P1 | `db.ts:15–21` |
+| 6 | Security | P1 | `index.ts:9–13` |
+| 7 | Security | P1 | `index.ts:5` |
+| 8 | Performance | P2 | `index.ts:17` |
+| 9 | Performance | P2 | `db.ts:5–11` |
+| 10 | Operability | P2 | absent |
+| 11 | Operability | P2 | absent |
+| 12 | Performance | P3 | `db.ts:19` |
 
 ## Diff
 
@@ -235,11 +333,12 @@ Issues #1, #2, #3 form a cascade: a single DB hiccup can crash the process, and 
 ```json
 {
   "input_tokens": 4,
-  "output_tokens": 5185,
-  "cache_read_input_tokens": 55180,
-  "cache_creation_input_tokens": 18024,
-  "total_tokens": 78393,
-  "cost_usd": 0.20248500000000003,
-  "num_turns": 3
+  "output_tokens": 5729,
+  "cache_read_input_tokens": 55152,
+  "cache_creation_input_tokens": 17984,
+  "total_tokens": 78869,
+  "cost_usd": 0.21039660000000002,
+  "num_turns": 3,
+  "permission_denials": 0
 }
 ```

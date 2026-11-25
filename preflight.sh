@@ -36,7 +36,10 @@ if curl -fs http://localhost:5173 >/dev/null 2>&1; then ok "Web responds on :517
 
 # 5. Headroom proxy port must be free (eval:all starts its own proxy there)
 HR_PORT="${HEADROOM_AB_PORT:-8788}"
-if lsof -nP -iTCP:"$HR_PORT" -sTCP:LISTEN >/dev/null 2>&1 || curl -s -m 1 "http://127.0.0.1:$HR_PORT" >/dev/null 2>&1; then
+HR_HAVE=$(command -v headroom >/dev/null 2>&1 || [ -x "$HOME/.local/bin/headroom" ] || [ -x "$HOME/.venvs/headroom/bin/headroom" ] && echo 1 || echo 0)
+if [ "$HR_HAVE" = 0 ]; then
+  note "Headroom not installed — optional, the eval skips its A/B (./setup.sh --with-headroom to add it)"
+elif lsof -nP -iTCP:"$HR_PORT" -sTCP:LISTEN >/dev/null 2>&1 || curl -s -m 1 "http://127.0.0.1:$HR_PORT" >/dev/null 2>&1; then
   bad "port $HR_PORT is in use — the Headroom A/B needs it (free it, or set HEADROOM_AB_PORT)"
 else
   ok "port $HR_PORT free (Headroom proxy)"

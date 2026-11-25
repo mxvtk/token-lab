@@ -1,8 +1,8 @@
-# proxy --mode token, compression pipeline ran on 17 requests
+# proxy --mode token, compression pipeline ran on 11 requests
 # /metrics before
 # HELP headroom_requests_total Total number of requests
 # TYPE headroom_requests_total counter
-headroom_requests_total 12
+headroom_requests_total 19
 
 # HELP headroom_requests_cached_total Cached request count
 # TYPE headroom_requests_cached_total counter
@@ -19,11 +19,11 @@ headroom_requests_failed_total{provider="unknown"} 0
 
 # HELP headroom_inbound_requests_total All inbound HTTP requests accepted by the proxy
 # TYPE headroom_inbound_requests_total counter
-headroom_inbound_requests_total 19
+headroom_inbound_requests_total 26
 
 # HELP headroom_inbound_requests_completed_total Inbound HTTP requests completed or aborted by the proxy
 # TYPE headroom_inbound_requests_completed_total counter
-headroom_inbound_requests_completed_total 18
+headroom_inbound_requests_completed_total 25
 
 # HELP headroom_inbound_requests_active Inbound HTTP requests currently active in the proxy
 # TYPE headroom_inbound_requests_active gauge
@@ -31,7 +31,7 @@ headroom_inbound_requests_active 1
 
 # HELP headroom_tokens_input_total Total input tokens
 # TYPE headroom_tokens_input_total counter
-headroom_tokens_input_total 51264
+headroom_tokens_input_total 123714
 
 # HELP headroom_tokens_output_total Total output tokens
 # TYPE headroom_tokens_output_total counter
@@ -39,43 +39,43 @@ headroom_tokens_output_total 0
 
 # HELP headroom_tokens_saved_total Tokens saved by optimization
 # TYPE headroom_tokens_saved_total counter
-headroom_tokens_saved_total 1064
+headroom_tokens_saved_total 1628
 
 # HELP headroom_persistent_savings_requests_total Durable lifetime requests recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_requests_total counter
-headroom_persistent_savings_requests_total 225
+headroom_persistent_savings_requests_total 381
 
 # HELP headroom_persistent_savings_tokens_saved_total Durable lifetime input tokens saved by proxy compression
 # TYPE headroom_persistent_savings_tokens_saved_total counter
-headroom_persistent_savings_tokens_saved_total 1064
+headroom_persistent_savings_tokens_saved_total 45418
 
 # HELP headroom_persistent_savings_input_tokens_total Durable lifetime input tokens recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_tokens_total counter
-headroom_persistent_savings_input_tokens_total 51264
+headroom_persistent_savings_input_tokens_total 1389920
 
 # HELP headroom_persistent_savings_input_cost_usd_total Durable lifetime input spend in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_cost_usd_total counter
-headroom_persistent_savings_input_cost_usd_total 0.153804
+headroom_persistent_savings_input_cost_usd_total 4.169817
 
 # HELP headroom_persistent_savings_compression_savings_usd_total Durable lifetime compression savings in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_compression_savings_usd_total counter
-headroom_persistent_savings_compression_savings_usd_total 0.003192
+headroom_persistent_savings_compression_savings_usd_total 0.136254
 
 # HELP headroom_latency_ms_sum Sum of request latencies in milliseconds
 # TYPE headroom_latency_ms_sum counter
-headroom_latency_ms_sum 10825.91
+headroom_latency_ms_sum 63404.1
 
 # HELP headroom_latency_ms_count Count of observed request latencies
 # TYPE headroom_latency_ms_count counter
-headroom_latency_ms_count 12
+headroom_latency_ms_count 19
 
 # HELP headroom_latency_ms_min Minimum observed request latency in milliseconds
 # TYPE headroom_latency_ms_min gauge
-headroom_latency_ms_min 660.11
+headroom_latency_ms_min 732.1
 
 # HELP headroom_latency_ms_max Maximum observed request latency in milliseconds
 # TYPE headroom_latency_ms_max gauge
-headroom_latency_ms_max 1798.27
+headroom_latency_ms_max 25464.97
 
 # HELP headroom_overhead_ms_sum Sum of Headroom processing overhead in milliseconds
 # TYPE headroom_overhead_ms_sum counter
@@ -119,39 +119,39 @@ headroom_cache_bust_tokens_lost_total 0
 
 # HELP headroom_kompress_size_gate_total Kompress size-gate decisions by outcome; within counts a gate pass, not whether ML compression then ran
 # TYPE headroom_kompress_size_gate_total counter
-headroom_kompress_size_gate_total{outcome="within"} 8
+headroom_kompress_size_gate_total{outcome="within"} 13
 
 # HELP headroom_requests_by_provider Requests by provider
 # TYPE headroom_requests_by_provider counter
-headroom_requests_by_provider{provider="bedrock"} 12
+headroom_requests_by_provider{provider="bedrock"} 19
 
 # HELP headroom_requests_by_model Requests by model
 # TYPE headroom_requests_by_model counter
-headroom_requests_by_model{model="claude-sonnet-4-6"} 12
+headroom_requests_by_model{model="claude-sonnet-4-6"} 19
 
 # HELP headroom_transform_timing_ms_sum Sum of transform timing in milliseconds
 # TYPE headroom_transform_timing_ms_sum counter
-headroom_transform_timing_ms_sum{transform="_deep_copy"} 0.14
-headroom_transform_timing_ms_sum{transform="_initial_token_count"} 0.83
-headroom_transform_timing_ms_sum{transform="content_router"} 6.23
-headroom_transform_timing_ms_sum{transform="_final_token_count"} 0.41
-headroom_transform_timing_ms_sum{transform="pipeline_total"} 6.78
+headroom_transform_timing_ms_sum{transform="_deep_copy"} 0.73
+headroom_transform_timing_ms_sum{transform="_initial_token_count"} 2.24
+headroom_transform_timing_ms_sum{transform="content_router"} 14.2
+headroom_transform_timing_ms_sum{transform="_final_token_count"} 1.19
+headroom_transform_timing_ms_sum{transform="pipeline_total"} 15.71
 
 # HELP headroom_transform_timing_ms_count Count of transform timing samples
 # TYPE headroom_transform_timing_ms_count counter
-headroom_transform_timing_ms_count{transform="_deep_copy"} 3
-headroom_transform_timing_ms_count{transform="_initial_token_count"} 3
-headroom_transform_timing_ms_count{transform="content_router"} 3
-headroom_transform_timing_ms_count{transform="_final_token_count"} 3
-headroom_transform_timing_ms_count{transform="pipeline_total"} 3
+headroom_transform_timing_ms_count{transform="_deep_copy"} 7
+headroom_transform_timing_ms_count{transform="_initial_token_count"} 7
+headroom_transform_timing_ms_count{transform="content_router"} 7
+headroom_transform_timing_ms_count{transform="_final_token_count"} 7
+headroom_transform_timing_ms_count{transform="pipeline_total"} 7
 
 # HELP headroom_transform_timing_ms_max Maximum transform timing in milliseconds
 # TYPE headroom_transform_timing_ms_max gauge
-headroom_transform_timing_ms_max{transform="_deep_copy"} 0.05
-headroom_transform_timing_ms_max{transform="_initial_token_count"} 0.3
-headroom_transform_timing_ms_max{transform="content_router"} 2.29
-headroom_transform_timing_ms_max{transform="_final_token_count"} 0.15
-headroom_transform_timing_ms_max{transform="pipeline_total"} 2.48
+headroom_transform_timing_ms_max{transform="_deep_copy"} 0.41
+headroom_transform_timing_ms_max{transform="_initial_token_count"} 0.37
+headroom_transform_timing_ms_max{transform="content_router"} 2.58
+headroom_transform_timing_ms_max{transform="_final_token_count"} 0.22
+headroom_transform_timing_ms_max{transform="pipeline_total"} 2.8
 
 # HELP headroom_active_ws_sessions Active Codex WebSocket sessions
 # TYPE headroom_active_ws_sessions gauge
@@ -168,7 +168,7 @@ proxy_image_generation_call_log_redacted_total 0
 # /metrics after
 # HELP headroom_requests_total Total number of requests
 # TYPE headroom_requests_total counter
-headroom_requests_total 29
+headroom_requests_total 30
 
 # HELP headroom_requests_cached_total Cached request count
 # TYPE headroom_requests_cached_total counter
@@ -185,11 +185,11 @@ headroom_requests_failed_total{provider="unknown"} 0
 
 # HELP headroom_inbound_requests_total All inbound HTTP requests accepted by the proxy
 # TYPE headroom_inbound_requests_total counter
-headroom_inbound_requests_total 40
+headroom_inbound_requests_total 41
 
 # HELP headroom_inbound_requests_completed_total Inbound HTTP requests completed or aborted by the proxy
 # TYPE headroom_inbound_requests_completed_total counter
-headroom_inbound_requests_completed_total 39
+headroom_inbound_requests_completed_total 40
 
 # HELP headroom_inbound_requests_active Inbound HTTP requests currently active in the proxy
 # TYPE headroom_inbound_requests_active gauge
@@ -197,7 +197,7 @@ headroom_inbound_requests_active 1
 
 # HELP headroom_tokens_input_total Total input tokens
 # TYPE headroom_tokens_input_total counter
-headroom_tokens_input_total 205094
+headroom_tokens_input_total 174513
 
 # HELP headroom_tokens_output_total Total output tokens
 # TYPE headroom_tokens_output_total counter
@@ -205,43 +205,43 @@ headroom_tokens_output_total 0
 
 # HELP headroom_tokens_saved_total Tokens saved by optimization
 # TYPE headroom_tokens_saved_total counter
-headroom_tokens_saved_total 2423
+headroom_tokens_saved_total 2081
 
 # HELP headroom_persistent_savings_requests_total Durable lifetime requests recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_requests_total counter
-headroom_persistent_savings_requests_total 242
+headroom_persistent_savings_requests_total 392
 
 # HELP headroom_persistent_savings_tokens_saved_total Durable lifetime input tokens saved by proxy compression
 # TYPE headroom_persistent_savings_tokens_saved_total counter
-headroom_persistent_savings_tokens_saved_total 2423
+headroom_persistent_savings_tokens_saved_total 45871
 
 # HELP headroom_persistent_savings_input_tokens_total Durable lifetime input tokens recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_tokens_total counter
-headroom_persistent_savings_input_tokens_total 205094
+headroom_persistent_savings_input_tokens_total 1440719
 
 # HELP headroom_persistent_savings_input_cost_usd_total Durable lifetime input spend in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_cost_usd_total counter
-headroom_persistent_savings_input_cost_usd_total 0.6153
+headroom_persistent_savings_input_cost_usd_total 4.322214
 
 # HELP headroom_persistent_savings_compression_savings_usd_total Durable lifetime compression savings in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_compression_savings_usd_total counter
-headroom_persistent_savings_compression_savings_usd_total 0.007269
+headroom_persistent_savings_compression_savings_usd_total 0.137613
 
 # HELP headroom_latency_ms_sum Sum of request latencies in milliseconds
 # TYPE headroom_latency_ms_sum counter
-headroom_latency_ms_sum 27455.76
+headroom_latency_ms_sum 75115.06
 
 # HELP headroom_latency_ms_count Count of observed request latencies
 # TYPE headroom_latency_ms_count counter
-headroom_latency_ms_count 29
+headroom_latency_ms_count 30
 
 # HELP headroom_latency_ms_min Minimum observed request latency in milliseconds
 # TYPE headroom_latency_ms_min gauge
-headroom_latency_ms_min 660.11
+headroom_latency_ms_min 732.1
 
 # HELP headroom_latency_ms_max Maximum observed request latency in milliseconds
 # TYPE headroom_latency_ms_max gauge
-headroom_latency_ms_max 2148.29
+headroom_latency_ms_max 25464.97
 
 # HELP headroom_overhead_ms_sum Sum of Headroom processing overhead in milliseconds
 # TYPE headroom_overhead_ms_sum counter
@@ -285,51 +285,45 @@ headroom_cache_bust_tokens_lost_total 0
 
 # HELP headroom_kompress_size_gate_total Kompress size-gate decisions by outcome; within counts a gate pass, not whether ML compression then ran
 # TYPE headroom_kompress_size_gate_total counter
-headroom_kompress_size_gate_total{outcome="within"} 25
+headroom_kompress_size_gate_total{outcome="within"} 33
 
 # HELP headroom_requests_by_provider Requests by provider
 # TYPE headroom_requests_by_provider counter
-headroom_requests_by_provider{provider="bedrock"} 29
+headroom_requests_by_provider{provider="bedrock"} 30
 
 # HELP headroom_requests_by_model Requests by model
 # TYPE headroom_requests_by_model counter
-headroom_requests_by_model{model="claude-sonnet-4-6"} 29
+headroom_requests_by_model{model="claude-sonnet-4-6"} 30
 
 # HELP headroom_transform_timing_ms_sum Sum of transform timing in milliseconds
 # TYPE headroom_transform_timing_ms_sum counter
-headroom_transform_timing_ms_sum{transform="_deep_copy"} 0.69
-headroom_transform_timing_ms_sum{transform="_initial_token_count"} 5.67
-headroom_transform_timing_ms_sum{transform="content_router"} 1558.56
-headroom_transform_timing_ms_sum{transform="_final_token_count"} 2.95
-headroom_transform_timing_ms_sum{transform="pipeline_total"} 1562.1
-headroom_transform_timing_ms_sum{transform="compressor:mixed"} 918.51
-headroom_transform_timing_ms_sum{transform="compressor:text"} 12.54
-headroom_transform_timing_ms_sum{transform="compressor:code_aware"} 589.82
-headroom_transform_timing_ms_sum{transform="compressor:tabular"} 5.97
+headroom_transform_timing_ms_sum{transform="_deep_copy"} 0.85
+headroom_transform_timing_ms_sum{transform="_initial_token_count"} 4.8
+headroom_transform_timing_ms_sum{transform="content_router"} 1059.14
+headroom_transform_timing_ms_sum{transform="_final_token_count"} 1.82
+headroom_transform_timing_ms_sum{transform="pipeline_total"} 1061.44
+headroom_transform_timing_ms_sum{transform="compressor:mixed"} 1016.59
+headroom_transform_timing_ms_sum{transform="compressor:text"} 14.76
 
 # HELP headroom_transform_timing_ms_count Count of transform timing samples
 # TYPE headroom_transform_timing_ms_count counter
-headroom_transform_timing_ms_count{transform="_deep_copy"} 12
-headroom_transform_timing_ms_count{transform="_initial_token_count"} 12
-headroom_transform_timing_ms_count{transform="content_router"} 12
-headroom_transform_timing_ms_count{transform="_final_token_count"} 12
-headroom_transform_timing_ms_count{transform="pipeline_total"} 12
+headroom_transform_timing_ms_count{transform="_deep_copy"} 10
+headroom_transform_timing_ms_count{transform="_initial_token_count"} 10
+headroom_transform_timing_ms_count{transform="content_router"} 10
+headroom_transform_timing_ms_count{transform="_final_token_count"} 10
+headroom_transform_timing_ms_count{transform="pipeline_total"} 10
 headroom_transform_timing_ms_count{transform="compressor:mixed"} 1
 headroom_transform_timing_ms_count{transform="compressor:text"} 1
-headroom_transform_timing_ms_count{transform="compressor:code_aware"} 2
-headroom_transform_timing_ms_count{transform="compressor:tabular"} 1
 
 # HELP headroom_transform_timing_ms_max Maximum transform timing in milliseconds
 # TYPE headroom_transform_timing_ms_max gauge
-headroom_transform_timing_ms_max{transform="_deep_copy"} 0.1
-headroom_transform_timing_ms_max{transform="_initial_token_count"} 1.55
-headroom_transform_timing_ms_max{transform="content_router"} 924.28
-headroom_transform_timing_ms_max{transform="_final_token_count"} 0.64
-headroom_transform_timing_ms_max{transform="pipeline_total"} 924.67
-headroom_transform_timing_ms_max{transform="compressor:mixed"} 918.51
-headroom_transform_timing_ms_max{transform="compressor:text"} 12.54
-headroom_transform_timing_ms_max{transform="compressor:code_aware"} 582.53
-headroom_transform_timing_ms_max{transform="compressor:tabular"} 5.97
+headroom_transform_timing_ms_max{transform="_deep_copy"} 0.41
+headroom_transform_timing_ms_max{transform="_initial_token_count"} 1.61
+headroom_transform_timing_ms_max{transform="content_router"} 1022.46
+headroom_transform_timing_ms_max{transform="_final_token_count"} 0.35
+headroom_transform_timing_ms_max{transform="pipeline_total"} 1022.86
+headroom_transform_timing_ms_max{transform="compressor:mixed"} 1016.59
+headroom_transform_timing_ms_max{transform="compressor:text"} 14.76
 
 # HELP headroom_active_ws_sessions Active Codex WebSocket sessions
 # TYPE headroom_active_ws_sessions gauge

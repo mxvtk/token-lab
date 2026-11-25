@@ -307,7 +307,9 @@ levers.forEach((c, i) => {
 wordmark(s, W - 2.9, H - 0.55);
 
 // ---- lever detail slide helper ----
+const LEVERS = [];   // exported to slide-text.json (Google Slides copy)
 function leverSlide(n, name, color, mode, lead, points, footer) {
+  LEVERS.push({ n, name, mode, lead, points, footer });
   const s = p.addSlide(); bg(s);
   leverBadge(s, M, 0.7, n, color);
   s.addText("LEVER " + n + "  ·  " + mode.toUpperCase(), { x: M + 1.15, y: 0.72, w: 8, h: 0.3, fontFace: HEAD, fontSize: 12, color: color, bold: true, charSpacing: 2, isTextBox: true, margin: 0 });
@@ -343,7 +345,8 @@ leverSlide(4, "CLI over MCP", YELLOW, "Hands-on",
 s = p.addSlide(); bg(s);
 eyebrow(s, "RESULTS");
 title(s, "The scoreboard");
-s.addText("Same query, each optimization OFF then ON (Sonnet). Each row is one isolated A/B, filled from results/.", { x: M, y: 1.85, w: 11.9, h: 0.5, fontFace: BODY, fontSize: 15, color: MUTE, isTextBox: true, margin: 0 });
+const SC_SUB = "Same query, each optimization OFF then ON (Sonnet). Each row is one isolated A/B, filled from results/.";
+s.addText(SC_SUB, { x: M, y: 1.85, w: 11.9, h: 0.5, fontFace: BODY, fontSize: 15, color: MUTE, isTextBox: true, margin: 0 });
 // header row: Optimization | Before (off) | After (on) | Saved
 const scX = M, scW = 7.7, rowH = 0.46, cols = [0.37, 0.22, 0.22, 0.19];
 function scCell(x, y, w, txt, color, bold) {
@@ -353,7 +356,7 @@ let ry = 2.4;
 const scMeta = [];
 // Every computed string the two results slides render, written to slide-text.json so
 // the Google Slides copy of the deck is filled from the same computation (no retyping).
-const EXPORT = { scoreboard: { rows: [], footnote: "" }, findings: [] };
+const EXPORT = { levers: LEVERS, scoreboard: { rows: [], footnote: "" }, findings: [] };
 scCell(scX + 0.15, ry, scW * cols[0], "Optimization", MUTE, true);
 scCell(scX + scW * cols[0], ry, scW * cols[1], "Before (off)", MUTE, true);
 scCell(scX + scW * (cols[0] + cols[1]), ry, scW * cols[2], "After (on)", MUTE, true);
@@ -411,8 +414,10 @@ if (scMeta.length) {
 // honest callout — method, not a fabricated result
 card(s, 9.1, 2.6, 3.5, 3.4);
 s.addShape(p.ShapeType.ellipse, { x: 10.5, y: 2.95, w: 0.7, h: 0.7, fill: { color: PURPLE }, line: { type: "none" } });
-s.addText("Same query,\noff vs on", { x: 9.1, y: 3.85, w: 3.5, h: 1.0, fontFace: HEAD, fontSize: 22, color: WHITE, bold: true, align: "center", isTextBox: true, margin: 0, lineSpacingMultiple: 1.0 });
-s.addText("Each optimization measured on its own. Re-run eval:all to get yours — mileage varies by repo and task.", { x: 9.3, y: 4.95, w: 3.1, h: 1.1, fontFace: BODY, fontSize: 13, color: MUTE, align: "center", isTextBox: true, margin: 0, lineSpacingMultiple: 1.15 });
+const SC_CALL = { head: "Same query,\noff vs on", body: "Each optimization measured on its own. Re-run eval:all to get yours — mileage varies by repo and task." };
+EXPORT.scoreboard.sub = SC_SUB; EXPORT.scoreboard.callout = SC_CALL;
+s.addText(SC_CALL.head, { x: 9.1, y: 3.85, w: 3.5, h: 1.0, fontFace: HEAD, fontSize: 22, color: WHITE, bold: true, align: "center", isTextBox: true, margin: 0, lineSpacingMultiple: 1.0 });
+s.addText(SC_CALL.body, { x: 9.3, y: 4.95, w: 3.1, h: 1.1, fontFace: BODY, fontSize: 13, color: MUTE, align: "center", isTextBox: true, margin: 0, lineSpacingMultiple: 1.15 });
 wordmark(s, W - 2.9, H - 0.55);
 
 // ========== S10b FINDINGS (every figure computed from results/ — none typed) ==========
@@ -545,21 +550,53 @@ socials.forEach((c, i) => {
 });
 wordmark(s, W - 2.9, H - 0.55);
 
-// ========== S14 CLOSE ==========
+// ========== S14 CLOSE: LESSONS (not "use these four") ==========
+// No figures here on purpose: the results slides carry the numbers.
 s = p.addSlide(); bg(s, BG);
-s.addShape(p.ShapeType.roundRect, { x: -1, y: H - 2.6, w: W + 2, h: 3.6, rectRadius: 0, fill: { color: BG2 }, line: { type: "none" }, rotate: -8 });
-s.addText("Four habits that pay for themselves", { x: M, y: 1.4, w: 11.9, h: 1.3, fontFace: HEAD, fontSize: 38, color: WHITE, bold: true, isTextBox: true, margin: 0, lineSpacingMultiple: 1.0 });
-const habits = [["Configure once", GREEN], ["Manage context", PURPLE], ["Measure the total", PURPLE_L], ["Verify the toggle", YELLOW]];
-habits.forEach((hbt, i) => {
-  const x = M + i * ((W - 2 * M - 3 * 0.35) / 4 + 0.35);
-  const cw = (W - 2 * M - 3 * 0.35) / 4;
-  s.addShape(p.ShapeType.roundRect, { x, y: 3.1, w: cw, h: 0.95, rectRadius: 0.12, fill: { color: CARD }, line: { color: hbt[1], width: 1.5 } });
-  s.addText(hbt[0], { x: x + 0.1, y: 3.1, w: cw - 0.2, h: 0.95, fontFace: HEAD, fontSize: 15, color: WHITE, bold: true, align: "center", valign: "middle", isTextBox: true, margin: 0 });
+s.addShape(p.ShapeType.roundRect, { x: -1, y: H - 1.9, w: W + 2, h: 3.0, rectRadius: 0, fill: { color: BG2 }, line: { type: "none" }, rotate: -6 });
+eyebrow(s, "LESSONS");
+title(s, "What we learned");
+const LESSONS = {
+  title: "What we learned",
+  cards: [
+    ["Don't trust plugin benchmarks", "A vendor's headline number is measured on its tasks, not yours. Treat it as a hypothesis to test.", RED],
+    ["Build your own eval", "Fixed tasks, OFF vs ON, several reps per side — and check the toggle really flipped.", GREEN],
+    ["Results vary per model", "Model, transport, Claude Code version and repo all move the number. Re-measure when one changes.", PURPLE_L],
+    ["Tokens aren't quality", "Nothing here grades the answers yet. A cheaper run with a wrong answer isn't a saving.", YELLOW],
+  ],
+  line: "Measure on your repo first — then keep only what wins there.",
+};
+const lw = (W - 2 * M - 3 * 0.35) / 4;
+LESSONS.cards.forEach(([head, body, col], i) => {
+  const x = M + i * (lw + 0.35);
+  card(s, x, 2.25, lw, 2.75);
+  s.addShape(p.ShapeType.roundRect, { x: x + 0.3, y: 2.55, w: 0.42, h: 0.42, rectRadius: 0.08, fill: { color: col }, line: { type: "none" } });
+  s.addText(head, { x: x + 0.3, y: 3.1, w: lw - 0.6, h: 0.75, fontFace: HEAD, fontSize: 16, color: WHITE, bold: true, isTextBox: true, margin: 0, lineSpacingMultiple: 1.0 });
+  s.addText(body, { x: x + 0.3, y: 3.85, w: lw - 0.6, h: 1.05, fontFace: BODY, fontSize: 12.5, color: MUTE, isTextBox: true, margin: 0, lineSpacingMultiple: 1.1 });
 });
-s.addText("Keep an eval so every change is measurable.", { x: M, y: 4.4, w: 11.9, h: 0.5, fontFace: BODY, fontSize: 17, color: MUTE, isTextBox: true, margin: 0 });
-dots(s, M, 5.55, 0.13);
-s.addText("Thank you", { x: M, y: 6.0, w: 6, h: 0.7, fontFace: HEAD, fontSize: 24, color: WHITE, bold: true, isTextBox: true, margin: 0 });
+s.addText(LESSONS.line, { x: M, y: 5.3, w: 11.9, h: 0.5, fontFace: BODY, fontSize: 17, color: PURPLE_L, isTextBox: true, margin: 0 });
+s.addText("Thank you", { x: M, y: 6.2, w: 6, h: 0.6, fontFace: HEAD, fontSize: 24, color: WHITE, bold: true, isTextBox: true, margin: 0 });
 wordmark(s, W - 2.9, H - 0.6);
+EXPORT.lessons = { title: LESSONS.title, cards: LESSONS.cards.map(([head, body]) => ({ head, body })), line: LESSONS.line };
+
+// ========== S15 Q&A (last) ==========
+const QA = {
+  eyebrow: "Q&A",
+  title: "Questions?",
+  sub: "Ask about the eval, the numbers, or how to measure your own repo.",
+  link: "github.com/mxvtk/token-lab",
+  url: "https://github.com/mxvtk/token-lab",
+};
+s = p.addSlide(); bg(s, BG);
+s.addShape(p.ShapeType.roundRect, { x: -1, y: H - 1.9, w: W + 2, h: 3.0, rectRadius: 0, fill: { color: BG2 }, line: { type: "none" }, rotate: -6 });
+s.addText(QA.eyebrow, { x: M, y: 1.25, w: 8, h: 0.35, fontFace: HEAD, fontSize: 14, color: PURPLE_L, bold: true, charSpacing: 2, isTextBox: true, margin: 0 });
+s.addText(QA.title, { x: M, y: 1.65, w: 11.9, h: 1.5, fontFace: HEAD, fontSize: 72, color: WHITE, bold: true, isTextBox: true, margin: 0 });
+s.addText(QA.sub, { x: M, y: 3.3, w: 11.9, h: 0.6, fontFace: BODY, fontSize: 20, color: MUTE, isTextBox: true, margin: 0 });
+s.addShape(p.ShapeType.roundRect, { x: M, y: 4.2, w: 5.2, h: 0.7, rectRadius: 0.12, fill: { color: CARD }, line: { color: PURPLE, width: 1.2 } });
+s.addText(QA.link, { x: M, y: 4.2, w: 5.2, h: 0.7, fontFace: HEAD, fontSize: 17, color: PURPLE_L, bold: true, align: "center", valign: "middle", isTextBox: true, margin: 0, hyperlink: { url: QA.url } });
+dots(s, M, 5.55, 0.13);
+wordmark(s, W - 2.9, H - 0.6);
+EXPORT.qa = QA;
 
 fs.writeFileSync(nodePath.join(__dirname, "slide-text.json"), JSON.stringify(EXPORT, null, 2) + "\n");
 p.writeFile({ fileName: nodePath.join(__dirname, "token-spend-workshop.pptx") }).then(f => console.log("WROTE", f));

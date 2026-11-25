@@ -232,7 +232,7 @@ elif [ "$HEADROOM_AB" = axcli ] && command -v axcli >/dev/null 2>&1 && axcli con
   axcli config compression "$HR_WAS" >/dev/null 2>&1
   trap - EXIT
 elif [ "$HEADROOM_AB" = proxy ]; then
-  skip "Headroom" "'$HEADROOM_BIN' not on PATH (run ./setup.sh, or set HEADROOM_BIN)"
+  skip "Headroom" "'$HEADROOM_BIN' not installed — it's opt-in: ./setup.sh --with-headroom (20+ min), or set HEADROOM_BIN"
 else
   skip "Headroom" "HEADROOM_AB=axcli but axcli has no compression setting"
 fi
@@ -245,13 +245,43 @@ fi
 # .claude/settings.local.json), so your user-level plugin setup is never touched,
 # and the local override is removed afterwards.
 CAVEMAN_ID="${CAVEMAN_PLUGIN:-caveman@claude-community}"
-cv_state() {   # prints: absent | enabled | disabled
+# cv_q state <id>  → absent | enabled | disabled for exactly that id (effective state)
+# cv_q others <id> → enabled plugins with the same name from another marketplace
+#                    (e.g. caveman@caveman) — they'd run on the OFF side too.
+cv_q() {
   "$CLAUDE_BIN" plugin list --json 2>/dev/null | node -e '
-    const id = process.argv[1].split("@")[0];
+    const [mode, id] = process.argv.slice(1);
     const ps = JSON.parse(require("fs").readFileSync(0, "utf8"));
-    const hits = ps.filter((p) => p.id.split("@")[0] === id);
-    console.log(hits.length === 0 ? "absent" : hits.some((p) => p.enabled) ? "enabled" : "disabled");
-  ' "$CAVEMAN_ID" 2>/dev/null || echo absent
+    if (mode === "state") {
+      const hits = ps.filter((p) => p.id === id);
+      console.log(hits.length === 0 ? "absent" : hits.some((p) => p.enabled) ? "enabled" : "disabled");
+    } else {
+      const name = id.split("@")[0];
+      console.log([...new Set(ps.filter((p) => p.id !== id && p.id.split("@")[0] === name && p.enabled).map((p) => p.id))].join(" "));
+    }
+  ' "$1" "$2" 2>/dev/null || { [ "$1" = state ] && echo absent; }
+}
+cv_state() { cv_q state "${1:-$CAVEMAN_ID}"; }
+# cv_set <id> true|false — local scope. If `claude plugin enable|disable` fails, writes
+# enabledPlugins in .claude/settings.local.json itself (what the CLI would write),
+# then re-checks; prints the CLI's own error if the state still isn't right.
+cv_set() {
+  local id=$1 on=$2 verb want out
+  if [ "$on" = true ]; then verb=enable; want=enabled; else verb=disable; want=disabled; fi
+  out=$("$CLAUDE_BIN" plugin "$verb" "$id" --scope local 2>&1) && return 0
+  [ "$(cv_state "$id")" = "$want" ] && return 0
+  node -e '
+    const fs = require("fs"), [f, id, on] = process.argv.slice(1);
+    let s = {}; try { s = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
+    (s.enabledPlugins ??= {})[id] = on === "true";
+    fs.mkdirSync(".claude", { recursive: true }); fs.writeFileSync(f, JSON.stringify(s, null, 2) + "\n");
+  ' "$CV_LOCAL_SETTINGS" "$id" "$on"
+  if [ "$(cv_state "$id")" = "$want" ]; then
+    printf "   claude plugin %s %s failed (%s) — set it in %s instead\n" "$verb" "$id" "$(printf %s "$out" | tail -1)" "$CV_LOCAL_SETTINGS"
+    return 0
+  fi
+  printf "   claude %s, plugin %s %s --scope local:\n%s\n" "$("$CLAUDE_BIN" --version 2>/dev/null)" "$verb" "$id" "$(printf %s "$out" | tail -3 | sed 's/^/     /')"
+  return 1
 }
 cv_available() { node scripts/caveman-avail.mjs "$CAVEMAN_ID" "$@"; }   # uses $CLAUDE_BIN
 CV_FLAG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.caveman-active"   # rewritten by caveman's SessionStart hook
@@ -276,18 +306,22 @@ elif [ "$CV_WAS" != absent ] || cv_available; then
   trap cv_restore EXIT
 
   sub "OFF — caveman not active in this repo"
-  [ "$CV_WAS" = enabled ] && { "$CLAUDE_BIN" plugin disable "$CAVEMAN_ID" --scope local >/dev/null 2>&1 || die "could not disable caveman locally"; }
+  CV_OTHERS=$(cv_q others "$CAVEMAN_ID")
+  [ -n "$CV_OTHERS" ] && printf "   also enabled: %s — turned off for both sides (this repo only)\n" "$CV_OTHERS"
+  for id in $CV_OTHERS; do cv_set "$id" false || die "could not disable $id locally"; done
+  if [ "$CV_WAS" = enabled ]; then cv_set "$CAVEMAN_ID" false || die "could not disable caveman locally"; fi
   [ "$(cv_state)" = enabled ] && die "caveman still enabled for the OFF side"
+  [ -n "$(cv_q others "$CAVEMAN_ID")" ] && die "another caveman is still enabled for the OFF side: $(cv_q others "$CAVEMAN_ID")"
   EVAL_MODE=caveman-plugin ev caveman__off
   EVAL_MODE=caveman-plugin evt "$LONG_TASK" caveman_long__off
   EVAL_MODE=caveman-plugin evt "$CHAIN_TASK" caveman_chain__off
 
   sub "ON — caveman enabled (local scope)"
   if [ "$CV_WAS" = absent ]; then
-    "$CLAUDE_BIN" plugin install "$CAVEMAN_ID" --scope local >/dev/null 2>&1 || die "could not install $CAVEMAN_ID"
+    out=$("$CLAUDE_BIN" plugin install "$CAVEMAN_ID" --scope local 2>&1) || { printf "%s\n" "$out" | tail -3 | sed 's/^/     /'; die "could not install $CAVEMAN_ID"; }
     CV_INSTALLED=1
   else
-    "$CLAUDE_BIN" plugin enable "$CAVEMAN_ID" --scope local >/dev/null 2>&1 || die "could not enable caveman locally"
+    cv_set "$CAVEMAN_ID" true || die "could not enable caveman locally"
   fi
   [ "$(cv_state)" = enabled ] || die "caveman did not enable"
   B=$(cv_stamp)

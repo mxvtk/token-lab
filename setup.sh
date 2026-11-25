@@ -2,8 +2,16 @@
 # Scripted install for the whole workshop. Idempotent — safe to re-run.
 # Installs/sets up everything the eval needs, then tells you what's ready and
 # what (if anything) still needs your hand. Nothing here fabricates data.
+#
+#   ./setup.sh                  # everything except Headroom
+#   ./setup.sh --with-headroom  # also install Headroom (slow: can take 20+ min)
 set -uo pipefail
 cd "$(dirname "$0")"
+
+WITH_HEADROOM="${WITH_HEADROOM:-0}"
+for a in "$@"; do case "$a" in --with-headroom) WITH_HEADROOM=1 ;; esac; done
+export CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+claude() { "$CLAUDE_BIN" "$@"; }
 
 ok()   { printf "  \033[32m✓\033[0m %s\n" "$1"; }
 warn() { printf "  \033[33m!\033[0m %s\n" "$1"; }
@@ -28,13 +36,33 @@ else
   warn "npm not found — install Node 20+"
 fi
 
-step "3. Headroom (compresses tool outputs before the model)"
+step "3. Claude Code (plugin commands the eval needs)"
+# The eval toggles plugins per repo with `plugin install|enable --scope local` and reads
+# `plugin list --json`. Old Claude Code (2.0.x) has neither, and fails to read today's
+# community marketplace ("Invalid schema"). Probe the commands, update if they're missing.
+cc_plugins_ok() { claude plugin list --help 2>&1 | grep -q -- --available && claude plugin install --help 2>&1 | grep -q -- --scope; }
+CC_V="$(claude --version 2>/dev/null | head -1 | sed "s/ (Claude Code)//")"
+if ! type -P "$CLAUDE_BIN" >/dev/null 2>&1; then
+  warn "claude not found — install Claude Code: https://docs.anthropic.com/en/docs/claude-code/setup"
+elif cc_plugins_ok; then
+  ok "Claude Code $CC_V"
+else
+  warn "Claude Code $CC_V is too old for the eval's plugin commands — running 'claude update'"
+  claude update 2>&1 | tail -3 | sed 's/^/      /'
+  hash -r 2>/dev/null
+  if cc_plugins_ok; then ok "Claude Code updated to $(claude --version 2>/dev/null | head -1)"
+  else warn "still $(claude --version 2>/dev/null | head -1) — update Claude Code by hand (claude update, or reinstall: https://docs.anthropic.com/en/docs/claude-code/setup), then re-run ./setup.sh"; fi
+fi
+
+step "4. Headroom (compresses tool outputs before the model) — optional"
 # Official install (github.com/headroomlabs-ai/headroom, "Install"):
 #   uv tool install --python 3.13 "headroom-ai[all]"
 # uv fetches Python 3.13 itself and puts the CLI in ~/.local/bin.
 HR_LOG_INSTALL=/tmp/token-lab-headroom-install.log
 HR_UV_BIN="$HOME/.local/bin/headroom"
-if command -v headroom >/dev/null 2>&1; then
+if [ "$WITH_HEADROOM" != 1 ] && ! command -v headroom >/dev/null 2>&1 && [ ! -x "$HR_UV_BIN" ] && [ ! -x "$HOME/.venvs/headroom/bin/headroom" ]; then
+  ok "skipped (install takes 20+ min) — the eval skips the Headroom A/B. To try it: ./setup.sh --with-headroom"
+elif command -v headroom >/dev/null 2>&1; then
   ok "headroom already installed ($(headroom --version 2>/dev/null | head -1))"
 elif [ -x "$HR_UV_BIN" ]; then
   ok "headroom already installed in $HR_UV_BIN ($("$HR_UV_BIN" --version 2>/dev/null | head -1))"
@@ -60,7 +88,7 @@ else
   fi
 fi
 
-step "4. Caveman plugin (compresses the model's output)"
+step "5. Caveman plugin (compresses the model's output)"
 # Only CHECK here. The eval toggles caveman itself, in this repo only
 # (--scope local), so your other sessions are never switched to caveman mode.
 # Source: Anthropic's public community marketplace (anthropics/claude-plugins-community,
@@ -69,7 +97,8 @@ CAVEMAN_ID="${CAVEMAN_PLUGIN:-caveman@claude-community}"
 cv_avail() { node scripts/caveman-avail.mjs "$CAVEMAN_ID" "$@"; }
 CV_ADD_LOG=/tmp/token-lab-caveman-marketplace.log
 : > "$CV_ADD_LOG"
-if ! cv_avail && [ "$CAVEMAN_ID" = caveman@claude-community ]; then
+cv_avail; CV_RC=$?   # 2 = this Claude Code is too old for plugin commands (see step 3)
+if [ "$CV_RC" = 1 ] && [ "$CAVEMAN_ID" = caveman@claude-community ]; then
   if claude plugin marketplace list --json 2>/dev/null | grep -q '"claude-community"'; then
     # Configured but caveman missing from it: the local copy is stale.
     claude plugin marketplace update claude-community >>"$CV_ADD_LOG" 2>&1 \
@@ -83,18 +112,21 @@ if ! cv_avail && [ "$CAVEMAN_ID" = caveman@claude-community ]; then
     done
   fi
 fi
-if cv_avail; then
+if [ "$CV_RC" = 2 ]; then
+  warn "skipped — the eval skips the Caveman A/B until Claude Code is updated:"
+  cv_avail --why
+elif cv_avail; then
   ok "$CAVEMAN_ID available — the eval enables it for this repo only"
 elif claude plugin list --json 2>/dev/null | grep -q "\"caveman@"; then
   ok "caveman already installed"
 else
   warn "$CAVEMAN_ID not found ($(claude --version 2>/dev/null | head -1)):"
   cv_avail --why
-  [ -s "$CV_ADD_LOG" ] && { warn "marketplace add/update said (full log: $CV_ADD_LOG):"; tail -6 "$CV_ADD_LOG" | sed 's/^/      /'; }
+  [ -s "$CV_ADD_LOG" ] && { warn "marketplace add/update said (full log: $CV_ADD_LOG):"; tail -6 "$CV_ADD_LOG" | cut -c1-240 | sed 's/^/      /'; }
   warn "by hand: claude plugin marketplace add https://github.com/anthropics/claude-plugins-community.git"
 fi
 
-step "5. CLI tools for the CLI-vs-MCP phase (gh + psql)"
+step "6. CLI tools for the CLI-vs-MCP phase (gh + psql)"
 # Homebrew's libpq is keg-only: psql lands in $(brew --prefix libpq)/bin, which
 # is NOT on PATH. Add it for this script (the eval does the same itself).
 libpq_path() {
@@ -117,7 +149,7 @@ else
   warn "install gh and psql (libpq) manually — no brew found"
 fi
 
-step "6. Claude auth"
+step "7. Claude auth"
 if claude -p "reply with: ok" --output-format json </dev/null 2>/dev/null | node scripts/claude-ok.mjs; then
   ok "claude is logged in"
 else

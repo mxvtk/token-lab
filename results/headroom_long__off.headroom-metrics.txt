@@ -43,27 +43,27 @@ headroom_tokens_saved_total 0
 
 # HELP headroom_persistent_savings_requests_total Durable lifetime requests recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_requests_total counter
-headroom_persistent_savings_requests_total 153
+headroom_persistent_savings_requests_total 310
 
 # HELP headroom_persistent_savings_tokens_saved_total Durable lifetime input tokens saved by proxy compression
 # TYPE headroom_persistent_savings_tokens_saved_total counter
-headroom_persistent_savings_tokens_saved_total 0
+headroom_persistent_savings_tokens_saved_total 43790
 
 # HELP headroom_persistent_savings_input_tokens_total Durable lifetime input tokens recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_tokens_total counter
-headroom_persistent_savings_input_tokens_total 0
+headroom_persistent_savings_input_tokens_total 1266206
 
 # HELP headroom_persistent_savings_input_cost_usd_total Durable lifetime input spend in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_cost_usd_total counter
-headroom_persistent_savings_input_cost_usd_total 0.0
+headroom_persistent_savings_input_cost_usd_total 3.79865
 
 # HELP headroom_persistent_savings_compression_savings_usd_total Durable lifetime compression savings in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_compression_savings_usd_total counter
-headroom_persistent_savings_compression_savings_usd_total 0.0
+headroom_persistent_savings_compression_savings_usd_total 0.13137
 
 # HELP headroom_latency_ms_sum Sum of request latencies in milliseconds
 # TYPE headroom_latency_ms_sum counter
-headroom_latency_ms_sum 10365.1
+headroom_latency_ms_sum 10670.88
 
 # HELP headroom_latency_ms_count Count of observed request latencies
 # TYPE headroom_latency_ms_count counter
@@ -71,11 +71,11 @@ headroom_latency_ms_count 12
 
 # HELP headroom_latency_ms_min Minimum observed request latency in milliseconds
 # TYPE headroom_latency_ms_min gauge
-headroom_latency_ms_min 702.46
+headroom_latency_ms_min 752.25
 
 # HELP headroom_latency_ms_max Maximum observed request latency in milliseconds
 # TYPE headroom_latency_ms_max gauge
-headroom_latency_ms_max 1016.17
+headroom_latency_ms_max 1259.35
 
 # HELP headroom_overhead_ms_sum Sum of Headroom processing overhead in milliseconds
 # TYPE headroom_overhead_ms_sum counter
@@ -140,7 +140,7 @@ proxy_image_generation_call_log_redacted_total 0
 # /metrics after
 # HELP headroom_requests_total Total number of requests
 # TYPE headroom_requests_total counter
-headroom_requests_total 27
+headroom_requests_total 18
 
 # HELP headroom_requests_cached_total Cached request count
 # TYPE headroom_requests_cached_total counter
@@ -157,11 +157,11 @@ headroom_requests_failed_total{provider="unknown"} 0
 
 # HELP headroom_inbound_requests_total All inbound HTTP requests accepted by the proxy
 # TYPE headroom_inbound_requests_total counter
-headroom_inbound_requests_total 38
+headroom_inbound_requests_total 30
 
 # HELP headroom_inbound_requests_completed_total Inbound HTTP requests completed or aborted by the proxy
 # TYPE headroom_inbound_requests_completed_total counter
-headroom_inbound_requests_completed_total 37
+headroom_inbound_requests_completed_total 29
 
 # HELP headroom_inbound_requests_active Inbound HTTP requests currently active in the proxy
 # TYPE headroom_inbound_requests_active gauge
@@ -181,39 +181,39 @@ headroom_tokens_saved_total 0
 
 # HELP headroom_persistent_savings_requests_total Durable lifetime requests recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_requests_total counter
-headroom_persistent_savings_requests_total 168
+headroom_persistent_savings_requests_total 316
 
 # HELP headroom_persistent_savings_tokens_saved_total Durable lifetime input tokens saved by proxy compression
 # TYPE headroom_persistent_savings_tokens_saved_total counter
-headroom_persistent_savings_tokens_saved_total 0
+headroom_persistent_savings_tokens_saved_total 43790
 
 # HELP headroom_persistent_savings_input_tokens_total Durable lifetime input tokens recorded by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_tokens_total counter
-headroom_persistent_savings_input_tokens_total 0
+headroom_persistent_savings_input_tokens_total 1266206
 
 # HELP headroom_persistent_savings_input_cost_usd_total Durable lifetime input spend in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_input_cost_usd_total counter
-headroom_persistent_savings_input_cost_usd_total 0.0
+headroom_persistent_savings_input_cost_usd_total 3.79865
 
 # HELP headroom_persistent_savings_compression_savings_usd_total Durable lifetime compression savings in USD estimated by the proxy savings tracker
 # TYPE headroom_persistent_savings_compression_savings_usd_total counter
-headroom_persistent_savings_compression_savings_usd_total 0.0
+headroom_persistent_savings_compression_savings_usd_total 0.13137
 
 # HELP headroom_latency_ms_sum Sum of request latencies in milliseconds
 # TYPE headroom_latency_ms_sum counter
-headroom_latency_ms_sum 23064.42
+headroom_latency_ms_sum 16635.78
 
 # HELP headroom_latency_ms_count Count of observed request latencies
 # TYPE headroom_latency_ms_count counter
-headroom_latency_ms_count 27
+headroom_latency_ms_count 18
 
 # HELP headroom_latency_ms_min Minimum observed request latency in milliseconds
 # TYPE headroom_latency_ms_min gauge
-headroom_latency_ms_min 702.46
+headroom_latency_ms_min 747.98
 
 # HELP headroom_latency_ms_max Maximum observed request latency in milliseconds
 # TYPE headroom_latency_ms_max gauge
-headroom_latency_ms_max 1016.17
+headroom_latency_ms_max 1455.04
 
 # HELP headroom_overhead_ms_sum Sum of Headroom processing overhead in milliseconds
 # TYPE headroom_overhead_ms_sum counter
@@ -257,11 +257,11 @@ headroom_cache_bust_tokens_lost_total 0
 
 # HELP headroom_requests_by_provider Requests by provider
 # TYPE headroom_requests_by_provider counter
-headroom_requests_by_provider{provider="bedrock"} 27
+headroom_requests_by_provider{provider="bedrock"} 18
 
 # HELP headroom_requests_by_model Requests by model
 # TYPE headroom_requests_by_model counter
-headroom_requests_by_model{model="claude-sonnet-4-6"} 27
+headroom_requests_by_model{model="claude-sonnet-4-6"} 18
 
 # HELP headroom_active_ws_sessions Active Codex WebSocket sessions
 # TYPE headroom_active_ws_sessions gauge

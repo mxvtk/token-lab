@@ -6,188 +6,204 @@ Grade: "/api/health added; non-numeric :id returns 400; only api/ files changed;
 
 ### Step 1: Read every file in api/src and web/src and explain how the app fits together - request flow from the React page to Postgres.
 
+Here's a complete picture of how the app fits together.
+
+---
+
+## Request flow: React → Express → Postgres
+
+### 1. Browser bootstrap (`web/src/main.tsx`)
+
+`createRoot` mounts `<App />` into `#root`. Nothing fancy — this is the standard React 18 entry point. `React.StrictMode` causes every effect to run twice in dev, which is worth knowing when you're watching network calls.
+
+### 2. Data fetch (`web/src/App.tsx:12-17`)
+
+On first render, `useEffect` fires a single `fetch` to `GET /api/users`. The API base URL is wired through a Vite env variable (`VITE_API_URL`), falling back to `http://localhost:3001` — so the same build artifact works in any environment just by injecting that variable at build time.
+
+The response type is `User[]`:
+```ts
+type User = { id: number; email: string; created_at: string }
+```
+
+The component holds three pieces of state: the user list, an error string, and a `selected` user. Clicking a user button populates `selected` from the already-fetched list (no second network call).
+
 `★ Insight ─────────────────────────────────────`
-- **`pool` is a module-level singleton** in `db.ts` — every route handler shares one connection pool, so there's no per-request connection overhead. The `withRetry` wrapper is only used at startup to wait for Postgres to become ready (useful inside Docker Compose where the DB container may start after the API).
-- **`seed.ts` is a one-shot script**, not part of the server. It runs `CREATE TABLE IF NOT EXISTS` (idempotent) and uses `ON CONFLICT (email) DO NOTHING` so re-running it never duplicates rows — a clean pattern for local development seeds.
-- **`App.tsx` line 20 has a deliberate bug** (`users[0].email` when `users` is `[]`). The comment says `eval task 2` — this is an intentional workshop exercise for participants to find and fix.
+- The `fetch` chain uses `r.ok ? r.json() : Promise.reject(...)` — a clean pattern because `fetch` only rejects on network failure, not on 4xx/5xx HTTP errors. Without that guard, a 500 from the API would silently look like a successful empty response.
+- There's a **single fetch on mount**, no React Query or SWR. The detail view is purely client-side selection — no `/api/users/:id` call is made from the UI at all (even though that endpoint exists on the server).
 `─────────────────────────────────────────────────`
 
----
+### 3. Express server (`api/src/index.ts`)
 
-## Request flow: React → Express → pg → Postgres
+Two routes:
 
-```
-Browser (React)
-│
-│  1. main.tsx mounts <App /> into #root via createRoot
-│
-│  2. App.tsx useEffect fires on mount:
-│       fetch(`${VITE_API_URL}/api/users`)     ← env var, defaults to :3001
-│
-│  3. HTTP GET /api/users crosses the network (or loopback in dev)
-│
-Express server (api/src/index.ts)
-│
-│  4. CORS middleware adds Access-Control-Allow-* headers
-│     (open wildcard — intentional for the workshop, not for prod)
-│
-│  5. Route handler: pool.query("SELECT id, email, created_at FROM users ORDER BY id")
-│
-pg Pool (api/src/db.ts)
-│
-│  6. Pool picks an idle connection (or opens one) to Postgres
-│     Connection params come from env vars; defaults point to the Docker "db" host
-│
-Postgres
-│
-│  7. Executes the query against the `users` table
-│     (created by seed.ts: id SERIAL PK, email TEXT UNIQUE, created_at TIMESTAMPTZ)
-│
-│  8. Returns rows → pool → route handler → res.json(rows)
-│
-Back in React
-│
-│  9. fetch resolves → setUsers(rows) triggers re-render
-│ 10. List renders all users as buttons; clicking one calls setSelected(u)
-│ 11. Selected user's detail section appears below the list
-```
+| Route | SQL |
+|---|---|
+| `GET /api/users` | `SELECT id, email, created_at FROM users ORDER BY id` |
+| `GET /api/users/:id` | `SELECT id, email, created_at FROM users WHERE id = $1` |
+
+CORS is opened wide (`*`) — intentional for the workshop context (comment says so). The server waits for Postgres to be ready via `withRetry(() => pool.query("SELECT 1"))` before calling `app.listen`, so it won't accept connections until the DB is reachable.
+
+### 4. Database connection (`api/src/db.ts`)
+
+A `pg.Pool` is created from environment variables, defaulting to service-name-based hostnames (`host: "db"`) — the Docker Compose service name. `withRetry` retries any async function up to 10 times with 1-second delays, used both here on startup and in `seed.ts`.
+
+`★ Insight ─────────────────────────────────────`
+- The pool default host is `"db"` (the Docker Compose service name), not `"localhost"`. This is a common gotcha: running the API outside Docker requires explicitly setting `PGHOST=localhost`. The fallback order is: env var → Docker service name.
+- Parameterized queries (`$1`, `$2`) throughout — no string concatenation, so no SQL injection risk even though this is a workshop app.
+`─────────────────────────────────────────────────`
+
+### 5. Schema + seed (`api/src/seed.ts`)
+
+A standalone script (not part of the server process) that:
+1. Waits for Postgres with `withRetry`
+2. Creates the `users` table (`CREATE TABLE IF NOT EXISTS`)
+3. Inserts 5 rows using `ON CONFLICT (email) DO NOTHING` (idempotent — safe to re-run)
+4. Closes the pool with `pool.end()`
 
 ---
 
-### Key architectural points
+## Full request path in one diagram
 
-| Layer | File | Responsibility |
-|---|---|---|
-| Entry point | `web/src/main.tsx` | Mounts React into the DOM |
-| UI + data fetching | `web/src/App.tsx` | Single component: fetch on mount, render list + detail |
-| HTTP server | `api/src/index.ts` | Two routes (`GET /api/users`, `GET /api/users/:id`) + CORS |
-| DB connection | `api/src/db.ts` | `pg.Pool` singleton + startup retry helper |
-| Schema + fixtures | `api/src/seed.ts` | Standalone script: creates table, inserts 5 seed users |
+```
+Browser
+  └─ main.tsx: createRoot → <App />
+       └─ App.tsx useEffect: fetch GET /api/users
+            └─ Express index.ts: GET /api/users handler
+                 └─ db.ts pool.query("SELECT id, email, created_at FROM users")
+                      └─ Postgres: users table (created by seed.ts)
+                           ↑
+                      seed.ts: CREATE TABLE + INSERT (run once at startup)
+```
 
-The server starts only after `withRetry(() => pool.query("SELECT 1"))` succeeds — it blocks `app.listen` until Postgres is reachable. This is the same retry loop `seed.ts` uses, so both scripts tolerate a slow-starting database container.
+The app is intentionally minimal — no auth, no mutations, no pagination. It's a clean skeleton for a workshop: one table, two read endpoints, one React page.
 
 ### Step 2: Run `docker compose logs api --tail 200` and summarise what the API has been doing and any errors or warnings.
 
-The API container has had a clean, uneventful lifecycle — no errors or warnings at all:
+Clean bill of health. Here's what happened:
 
-| Step | What happened |
-|---|---|
-| **Seed** | `npm run seed` ran `src/seed.ts` — connected to Postgres, created the `users` table (idempotent), inserted the 5 seed rows, exited cleanly (`seed complete`) |
-| **Start** | `npm run start` ran `src/index.ts` — the `withRetry` loop succeeded on the first try (Postgres was already up), and the Express server bound to `:3001` |
+1. **Seed ran successfully** — `npm run seed` executed `src/seed.ts`, which waited for Postgres, created the `users` table (if absent), inserted the 5 seed rows idempotently, and exited with `seed complete`.
 
-No errors, no warnings, no retries. The container started up in the ideal happy path.
+2. **Server started cleanly** — `npm run start` launched `src/index.ts` and the API is now listening on `:3001`.
+
+3. **No errors or warnings** — no DB connection retries, no crashes, no unhandled rejections. The `withRetry` probe against Postgres succeeded on the first attempt both times (no retry noise in the logs).
+
+The API has received no HTTP requests since startup — the logs only show the init sequence, nothing from `/api/users` calls yet.
 
 ### Step 3: Using psql (postgresql://tokenlab:tokenlab@localhost:5432/tokenlab), show the users table schema and its rows, and point out anything odd in the data.
 
 ### Schema
 
-Straightforward — three columns, no surprises:
-- `id`: auto-incrementing integer PK
-- `email`: `TEXT NOT NULL UNIQUE` — no length cap, one index enforces uniqueness
-- `created_at`: `TIMESTAMPTZ NOT NULL DEFAULT now()` — timezone-aware, defaults to insertion time
+Clean and minimal:
 
-### Rows
-
-| id | email | created_at |
+| Column | Type | Notes |
 |---|---|---|
-| 1 | ada@example.com | 2026-11-20 |
-| 2 | grace@example.com | 2026-11-22 |
-| 3 | alan@example.com | 2026-09-01 |
-| 4 | linus@example.com | 2026-06-15 |
-| 5 | margaret@example.com | 2026-11-23 |
+| `id` | `integer` | PK, auto-increment via sequence |
+| `email` | `text` | `NOT NULL`, unique constraint |
+| `created_at` | `timestamptz` | `NOT NULL`, defaults to `now()` |
 
-### Odd things in the data
+### Data
 
-1. **`created_at` is midnight UTC for every row** — the seed script passed date strings (`"2026-11-20"`) rather than timestamps, so Postgres cast them to `00:00:00+00`. Not wrong, but all times are suspiciously identical at midnight, which would look odd in a real dataset.
+5 rows, all healthy — no nulls, no duplicates. Two things worth noting:
 
-2. **Non-monotonic sign-up dates** — rows 3 and 4 (alan, linus) have `created_at` values months before rows 1, 2, and 5, yet their `id`s are higher. That's because `id` reflects insertion order (seed script ran them top-to-bottom), not chronological sign-up order. A query like `ORDER BY id` and `ORDER BY created_at` would return different sequences — something to be aware of if the app ever sorts by either.
+**1. `created_at` times are midnight UTC on every row.**
+The seed script passes bare date strings (`"2026-11-20"`, `"2026-06-15"`, etc.) as the `created_at` value. Postgres coerces a date string to `timestamptz` as midnight in the session timezone (UTC here), which is why every timestamp is `00:00:00+00`. In a real app these would be actual signup timestamps — worth knowing when you write queries or display relative times.
 
-3. **All emails are `@example.com`** — expected for seed data, but worth noting if any validation or domain-based logic is ever added.
+**2. The dates are not in chronological order by `id`.**
+`id 3` (alan) has `created_at 2026-09-01` and `id 4` (linus) has `2026-06-15` — both earlier than ids 1 and 2. The seed inserts rows in the order they appear in the array, so `id` sequence reflects insertion order, not signup date. If you ever sort by `id` expecting chronological order, you'll get a misleading result. The API's `ORDER BY id` query (`api/src/index.ts:17`) does exactly this — ada comes first by `id`, but linus actually "signed up" earliest.
+
+`★ Insight ─────────────────────────────────────`
+- `text` for `email` rather than `varchar(n)` is idiomatic in Postgres — there's no performance difference, and you avoid the `varchar` length-check overhead. The `UNIQUE` index enforces uniqueness at the storage level, not via application logic.
+- `TIMESTAMPTZ` (timestamp with time zone) is the right choice over plain `TIMESTAMP` — it stores UTC internally and converts on read, so it stays correct across timezone changes. Plain `TIMESTAMP` would silently store whatever string you give it with no zone awareness.
+`─────────────────────────────────────────────────`
 
 ### Step 4: Add a GET /api/health endpoint to the Express API that returns {"status":"ok"} with HTTP 200.
 
-Looks good. The TypeScript diagnostics shown are pre-existing across the whole file (missing `@types/express`, implicit `any` on all handlers) — not introduced by this change.
+The `curl` needs your approval to run — please allow it if you'd like me to verify the endpoint live. The TypeScript diagnostics shown are all pre-existing (missing `express` type declarations and implicit `any` on handler params) — none were introduced by this change.
 
-You can smoke-test it once the container restarts:
+The added code is at `api/src/index.ts:16-18`:
 
-```bash
-curl http://localhost:3001/api/health
-# {"status":"ok"}
+```ts
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
 ```
 
-The endpoint is at line 15–17, placed before the data routes so health probes never hit the DB.
+Once approved, you can also test it manually with:
+```
+curl http://localhost:3001/api/health
+```
+
+Note: the server uses `tsx` (which watches/reloads on file changes in dev), but if it doesn't auto-reload you may need to restart the container with `docker compose restart api`.
 
 ### Step 5: Make GET /api/users/:id return HTTP 400 with an error message when the id is not a positive integer.
 
-Done. The guard at `api/src/index.ts:30-33` now rejects before the query runs:
+The validation logic:
 
-| Input | Behaviour |
-|---|---|
-| `/api/users/3` | proceeds to DB query as before |
-| `/api/users/abc` | `Number("abc")` → `NaN`, `isInteger(NaN)` → false → **400** |
-| `/api/users/1.5` | `Number("1.5")` → `1.5`, `isInteger(1.5)` → false → **400** |
-| `/api/users/0` or `/api/users/-5` | `id < 1` → **400** |
+- `Number("abc")` → `NaN`, `Number.isInteger(NaN)` → `false` → **400**
+- `Number("1.5")` → `1.5`, `Number.isInteger(1.5)` → `false` → **400**
+- `Number("0")` → `0`, `0 < 1` → `true` → **400**
+- `Number("-3")` → `-3`, `-3 < 1` → `true` → **400**
+- `Number("2")` → `2`, passes → query runs → **200** or **404**
 
-The validated `id` (a JS number) is also now what gets passed to the parameterized query instead of the raw string `req.params.id`, which is slightly cleaner for `pg`.
+The TS diagnostics in the output are all pre-existing (missing `express` types, implicit `any` on handler params) — none were introduced here.
 
 ### Step 6: Review your changes with git diff and write a pull request description for them - summary, changes, and how to test.
 
-The diff covers two distinct areas. The API changes (`api/src/index.ts`) are what I wrote in this session. The rest — `README.md`, `eval/`, `deck/`, `setup.sh` — were already on the branch before I touched anything.
-
-Here's a PR description that covers the full branch:
+The diff also contains pre-existing changes to `deck/` and `results/` files that were already modified before this session — those are unrelated to the API work. Here's the PR description scoped to what I changed:
 
 ---
 
-## Add health endpoint + user ID validation to API; Bedrock Headroom support and cost-accounting fixes for workshop eval
+## Add `/api/health` endpoint and input validation for user ID
 
 ### Summary
 
-- **API** (`api/src/index.ts`): add `GET /api/health → {"status":"ok"}` for liveness probes; add input validation on `GET /api/users/:id` returning HTTP 400 when the id is not a positive integer.
-- **Eval runner** (`eval/run.ts`, `eval/run-all.sh`): fix multi-step cost accounting (`total_cost_usd` from `--resume` sessions is cumulative — now only the per-step delta is summed); add Bedrock-mode Headroom support via `--bedrock-api-url` + `--settings` passthrough; guard ON rows where the compression pipeline ran zero requests.
-- **Workshop setup** (`setup.sh`): install Headroom into a venv (`~/.venvs/headroom`) instead of `pip install --user`, which Homebrew Python rejects (PEP 668).
-- **Deck** (`deck/build-deck.js`): add prompt-cache savings calculation priced at list rates; improve Headroom findings card to show all three rows + proxy pipeline counts; export computed slide text to `slide-text.json`.
-- **Docs** (`README.md`): update dry-run instructions for Bedrock mode; document venv install path and `HEADROOM_BIN` override.
+Two small hardening changes to the Express API:
+
+- **Health endpoint** (`GET /api/health`) — returns `{"status":"ok"}` with HTTP 200. Placed before the user routes so it's reachable without any auth or middleware interference, making it suitable for container health checks and load-balancer probes.
+- **User ID validation** (`GET /api/users/:id`) — validates that `:id` is a positive integer before hitting the database. Non-integers, floats, zero, and negative values now return HTTP 400 with `{"error":"id must be a positive integer"}` instead of letting a malformed value reach the query.
 
 ### Changes
 
-| File | What changed |
-|---|---|
-| `api/src/index.ts` | `GET /api/health` endpoint; positive-integer guard on `GET /api/users/:id` |
-| `eval/run.ts` | Per-step cost delta from cumulative session total; `EVAL_CLAUDE_SETTINGS` flag; `cost_accounting` field in result JSON |
-| `eval/run-all.sh` | Bedrock upstream detection; `--mode token` for Headroom proxy; pipeline-run count in metrics file; stricter ON validation |
-| `setup.sh` | Headroom installed via `python3 -m venv` instead of `pip install --user` |
-| `deck/build-deck.js` | Cache savings math; multi-row Headroom card; `EXPORT`/`slide-text.json` |
-| `README.md` | Bedrock + venv + cost-accounting notes |
+**`api/src/index.ts`**
+
+| What | Before | After |
+|---|---|---|
+| `GET /api/health` | did not exist | returns `{"status":"ok"}` with 200 |
+| `GET /api/users/:id` — invalid id | passed raw string to `pool.query` | returns 400 before querying |
+| `GET /api/users/:id` — valid id | passed `req.params.id` (string) to `$1` | passes validated `id` (number) to `$1` |
 
 ### How to test
 
-**Health endpoint**
 ```bash
-curl http://localhost:3001/api/health
-# → {"status":"ok"}  HTTP 200
-```
+# Health check
+curl -i http://localhost:3001/api/health
+# → 200 {"status":"ok"}
 
-**User ID validation**
-```bash
-curl -i http://localhost:3001/api/users/abc    # 400 {"error":"id must be a positive integer"}
-curl -i http://localhost:3001/api/users/-1     # 400
-curl -i http://localhost:3001/api/users/0      # 400
-curl -i http://localhost:3001/api/users/1      # 200 (valid row)
-curl -i http://localhost:3001/api/users/9999   # 404 {"error":"not found"}
-```
+# Valid id
+curl -i http://localhost:3001/api/users/1
+# → 200 {id:1, email:"ada@example.com", ...}
 
-**Eval + deck (requires workshop setup)**
-```bash
-./setup.sh                            # should show ✓ for headroom in ~/.venvs
-npm run eval:all -- --task 1          # smoke test; check Headroom A/B section ran
-npm run build-deck                    # should write deck/slide-text.json alongside the pptx
-```
+# Non-existent but valid id
+curl -i http://localhost:3001/api/users/999
+# → 404 {"error":"not found"}
 
-For Bedrock mode, set `CLAUDE_CODE_USE_BEDROCK=1` and `ANTHROPIC_BEDROCK_BASE_URL=http://127.0.0.1:<local-gateway-port>` in `~/.claude/settings.json`; `eval:all` will detect the local URL and route Headroom's proxy in front of it automatically.
+# Invalid: non-integer
+curl -i http://localhost:3001/api/users/abc
+# → 400 {"error":"id must be a positive integer"}
+
+# Invalid: float
+curl -i http://localhost:3001/api/users/1.5
+# → 400 {"error":"id must be a positive integer"}
+
+# Invalid: zero / negative
+curl -i http://localhost:3001/api/users/0
+curl -i http://localhost:3001/api/users/-1
+# → 400 {"error":"id must be a positive integer"}
+```
 
 ---
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+The deck/results files in the working tree are pre-existing modifications unrelated to this change and should be excluded from (or committed separately before) this PR.
 
 ## Diff
 
@@ -225,16 +241,21 @@ index 6165a7f..89d73c3 100644
      res.status(404).json({ error: "not found" });
 ```
 
+## Denied by permissions
+
+- Bash {"command":"curl -s http://localhost:3001/api/health","description":"Hit the health endpoint on the running API"}
+
 ## Usage
 
 ```json
 {
-  "input_tokens": 29,
-  "output_tokens": 5435,
-  "cache_read_input_tokens": 646682,
-  "cache_creation_input_tokens": 45219,
-  "total_tokens": 697365,
-  "cost_usd": 0.44518784999999994,
-  "num_turns": 19
+  "input_tokens": 30,
+  "output_tokens": 5620,
+  "cache_read_input_tokens": 709520,
+  "cache_creation_input_tokens": 36591,
+  "total_tokens": 751761,
+  "cost_usd": 0.516792,
+  "num_turns": 20,
+  "permission_denials": 1
 }
 ```

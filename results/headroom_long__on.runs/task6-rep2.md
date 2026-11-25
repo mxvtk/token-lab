@@ -5,121 +5,23 @@ Grade: "No files changed; review lists >=5 distinct issues, each with file:line 
 ## Agent result
 
 `★ Insight ─────────────────────────────────────`
-Both files are intentionally minimal (workshop context), but several of the gaps here are the exact class of issues that cause production incidents: unhandled async throws that leave HTTP clients hanging, retry logic that retries permanent errors, and CORS that breaks on preflight — none of which a linter or type-checker will catch.
+Express 4 does **not** automatically forward thrown errors from async route handlers to the error middleware — they become unhandled promise rejections. Express 5 fixes this, but most codebases are still on v4. The pattern `async (req, res) => { ... }` without try/catch is a silent crash vector.
 `─────────────────────────────────────────────────`
 
----
-
-## `db.ts`
+Here is the full review. Issues are ordered by severity.
 
 ---
 
-### 1 · Hardcoded credential defaults — `db.ts:8-9`
-**Why it matters:** If `PGPASSWORD` / `PGUSER` are unset in production (e.g. a missing Secret), the server starts, connects successfully against the defaults, and silently talks to the wrong database. No startup crash, no alert — just subtle data corruption or access to test data.
+## Critical
+
+### 1. Async route handlers have no error handling — unhandled rejections crash the process
+
+**`index.ts:17`**, **`index.ts:25`**
+
+Any DB error (connection drop, syntax error, type mismatch) rejects the promise. In Express 4 these are not caught by error middleware and become unhandled rejections. Node ≥ 15 terminates the process on unhandled rejections.
 
 ```ts
-// Before: silently falls back to dev credentials in prod
-password: process.env.PGPASSWORD ?? "tokenlab",
-
-// After: fail fast if the secret is absent
-function requireEnv(name: string): string {
-  const val = process.env[name];
-  if (!val) throw new Error(`Missing required env var: ${name}`);
-  return val;
-}
-
-export const pool = new Pool({
-  host:     process.env.PGHOST     ?? "db",
-  port:     Number(process.env.PGPORT ?? 5432),
-  user:     requireEnv("PGUSER"),
-  password: requireEnv("PGPASSWORD"),
-  database: requireEnv("PGDATABASE"),
-});
-```
-
----
-
-### 2 · No pool size or timeout limits — `db.ts:5-11`
-**Why it matters:** `pg.Pool` defaults to `max: 10`, `connectionTimeoutMillis: 0` (infinite wait). Under a traffic spike, connection acquisition blocks forever, and you have no visibility into it. Under a DB hiccup, connections that become idle-but-stuck are never evicted.
-
-```ts
-export const pool = new Pool({
-  ...
-  max:                      20,
-  idleTimeoutMillis:        30_000,
-  connectionTimeoutMillis:  5_000,
-});
-```
-
----
-
-### 3 · `withRetry` retries permanent errors and has no backoff — `db.ts:13-24`
-**Why it matters:** A wrong password, a DNS failure, or a misconfigured host will retry 10 times at 1-second intervals and block startup for 10 seconds with no log output. Meanwhile a real transient `ECONNREFUSED` on a healthy container race should actually back off so it doesn't hammer the DB during its own startup.
-
-```ts
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  tries = 10,
-): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (err: any) {
-      // Don't retry auth or config errors — they won't self-heal.
-      if (err?.code === "28P01" || err?.code === "3D000") throw err;
-
-      lastErr = err;
-      const delay = Math.min(1000 * 2 ** i, 10_000); // exponential backoff, cap 10s
-      console.warn(`db: attempt ${i + 1}/${tries} failed (${err?.message}), retrying in ${delay}ms`);
-      await new Promise((r) => setTimeout(r, delay));
-    }
-  }
-  throw lastErr;
-}
-```
-
----
-
-### 4 · No SSL for database connections — `db.ts:5-11`
-**Why it matters:** Without `ssl`, credentials and query results travel in plaintext over the network, which matters as soon as the app and DB aren't on the same host or same VPC.
-
-```ts
-export const pool = new Pool({
-  ...
-  ssl: process.env.PGSSLMODE === "disable"
-    ? false
-    : { rejectUnauthorized: process.env.NODE_ENV === "production" },
-});
-```
-
----
-
-### 5 · Pool is never closed on shutdown — `db.ts` / `index.ts`
-**Why it matters:** When the process receives SIGTERM (K8s pod eviction, docker stop, etc.), Node will not exit cleanly while the pool holds open sockets. This causes a 30-second grace-period timeout on every deploy rollout.
-
-```ts
-// in index.ts, after app.listen()
-const server = app.listen(port, () => { ... });
-
-process.on("SIGTERM", () => {
-  server.close(() => {
-    pool.end().then(() => process.exit(0));
-  });
-});
-```
-
----
-
-## `index.ts`
-
----
-
-### 6 · Async route handlers have no error handling — `index.ts:16-21`, `24-34`
-**Why it matters:** In Express 4, an unhandled rejection inside an `async` route handler does NOT invoke the error middleware — the response just hangs and the client eventually times out. Any transient DB error (e.g. `connectionTimeoutMillis` from issue #2) will trigger this.
-
-```ts
-// Wrap every async handler:
+// Every route must wrap the DB call:
 app.get("/api/users", async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
@@ -127,11 +29,11 @@ app.get("/api/users", async (_req, res, next) => {
     );
     res.json(rows);
   } catch (err) {
-    next(err);
+    next(err); // hands off to Express error middleware
   }
 });
 
-// Add a global JSON error handler at the bottom:
+// Add a catch-all error handler at the bottom of index.ts:
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   res.status(500).json({ error: "internal server error" });
@@ -140,40 +42,29 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 
 ---
 
-### 7 · Startup DB probe rejection is unhandled — `index.ts:38-42`
-**Why it matters:** If `withRetry` exhausts all attempts and rejects, there is no `.catch()`. In Node ≥15 this crashes the process without a useful message; in Node 14 it emits an `UnhandledPromiseRejectionWarning` and swallows the error. Either way the server never starts and the reason is unclear.
+### 2. Pool `error` event is unhandled — idle client errors crash the process
+
+**`db.ts` (no line — event never wired)**
+
+When the database kills an idle connection, `pg.Pool` emits `'error'` on the pool. Without a listener this becomes an uncaught exception and crashes Node.
 
 ```ts
-withRetry(() => pool.query("SELECT 1"))
-  .then(() => {
-    app.listen(port, () => console.log(`api listening on :${port}`));
-  })
-  .catch((err) => {
-    console.error("Could not connect to database:", err);
-    process.exit(1);
-  });
+export const pool = new Pool({ ... });
+
+pool.on("error", (err) => {
+  console.error("pg pool idle client error", err);
+  // Don't throw — let the pool reconnect; individual queries will
+  // surface their own errors through normal promise rejection.
+});
 ```
 
 ---
 
-### 8 · No CORS preflight (OPTIONS) handler — `index.ts:8-13`
-**Why it matters:** The middleware correctly sets CORS headers, but Express has no registered handler for `OPTIONS`. Browsers send a preflight `OPTIONS` request before any non-simple request (e.g. `Content-Type: application/json` with PUT/DELETE). Express returns `404` on OPTIONS, the browser treats the preflight as failed, and the actual request is never sent.
+### 3. `:id` is not validated — a non-integer path segment throws a DB error
 
-```ts
-// Replace manual headers with the `cors` package, or add an explicit handler:
-app.options("*", (_req, res) => res.status(204).send());
+**`index.ts:27`**
 
-// Or, in production, scope the allowed origin:
-app.use(cors({
-  origin: process.env.CORS_ORIGIN ?? "*",
-  methods: ["GET", "POST", "PUT", "DELETE"],
-}));
-```
-
----
-
-### 9 · `:id` parameter is not validated before hitting the DB — `index.ts:27`
-**Why it matters:** `req.params.id` is a string. If a caller sends `/api/users/abc`, PostgreSQL will throw `invalid input syntax for type integer` — which today propagates as an unhandled rejection (issue #6). Validating upfront returns a 400 instead, keeps DB errors out of this path, and avoids leaking postgres error messages to clients.
+`req.params.id` is a raw string. `GET /api/users/abc` sends `'abc'` as `$1` to a query that likely casts it to `integer`, which throws `invalid input syntax for type integer`. Combined with issue #1 this crashes the process; with error handling it still leaks that the column is an integer.
 
 ```ts
 app.get("/api/users/:id", async (req, res, next) => {
@@ -200,30 +91,195 @@ app.get("/api/users/:id", async (req, res, next) => {
 
 ---
 
-### 10 · `PORT` env var not validated — `index.ts:36`
-**Why it matters:** `Number("not-a-port")` → `NaN`. `app.listen(NaN)` does not throw — it silently picks a random ephemeral port. The server starts and logs a port that it's not actually on.
+## High
+
+### 4. Startup DB failure is an unhandled rejection
+
+**`index.ts:38`**
+
+If `withRetry` exhausts all retries the returned promise rejects. `.then(...)` with no `.catch(...)` leaves it unhandled; the process terminates without a helpful log line and without calling `app.listen`.
 
 ```ts
-const rawPort = process.env.PORT ?? "3001";
-const port = Number(rawPort);
-if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  throw new Error(`Invalid PORT: "${rawPort}"`);
+withRetry(() => pool.query("SELECT 1"))
+  .then(() => {
+    app.listen(port, () => console.log(`api listening on :${port}`));
+  })
+  .catch((err) => {
+    console.error("database unreachable after retries, exiting", err);
+    process.exit(1);
+  });
+```
+
+---
+
+### 5. `withRetry` retries permanent errors (wrong password, missing DB)
+
+**`db.ts:13`**
+
+Every error is retried — including `password authentication failed`, `database "x" does not exist`, or `role "x" does not exist`. These will never succeed and you waste 10 seconds before surfacing the real message.
+
+```ts
+const TRANSIENT_CODES = new Set([
+  "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT",
+  "57P01", // admin shutdown
+  "08006", // connection failure
+  "08001", // unable to connect
+]);
+
+export async function withRetry<T>(fn: () => Promise<T>, tries = 10): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const code: string = err?.code ?? "";
+      const isTransient =
+        TRANSIENT_CODES.has(code) ||
+        err?.message?.includes("ECONNREFUSED");
+      if (!isTransient) throw err; // fail fast on permanent errors
+      lastErr = err;
+      const delay = Math.min(1000 * 2 ** i, 15_000); // exponential backoff
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
 }
 ```
 
 ---
 
-### 11 · `GET /api/users` returns all rows without pagination — `index.ts:17-20`
-**Why it matters:** A table with millions of rows will serialize the entire result into memory, block the event loop during JSON serialization, and OOM the process. The calling client has no way to paginate.
+### 6. No graceful shutdown — in-flight requests are dropped on SIGTERM
+
+**`index.ts` (not present)**
+
+Kubernetes and Docker send `SIGTERM` before killing the process. Without a shutdown handler the pool is closed mid-query and all in-flight requests get connection errors.
+
+```ts
+const server = app.listen(port, () => console.log(`api listening on :${port}`));
+
+process.on("SIGTERM", () => {
+  server.close(async () => {
+    await pool.end();
+    process.exit(0);
+  });
+});
+```
+
+---
+
+### 7. CORS wildcard with no preflight handler
+
+**`index.ts:9`** and **`index.ts:8-13`**
+
+`Access-Control-Allow-Origin: *` is fine for a fully public API, but without an `OPTIONS` handler browsers never receive a 2xx for preflight requests, so cross-origin `POST`/`PUT`/`DELETE` with a `Content-Type` header will fail.
+
+```ts
+// Replace the manual middleware with the cors package — handles OPTIONS automatically:
+import cors from "cors";
+
+app.use(cors({
+  origin: process.env.CORS_ORIGIN ?? "*", // lock down to known origins in prod
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type"],
+}));
+```
+
+---
+
+## Medium
+
+### 8. Hardcoded credential defaults silently succeed with wrong config
+
+**`db.ts:7-10`**
+
+```ts
+user: process.env.PGUSER ?? "tokenlab",
+password: process.env.PGPASSWORD ?? "tokenlab",
+```
+
+If environment variables are missing in production the server starts using the defaults and connects to whatever database accepts them. Missing config should fail loudly.
+
+```ts
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) throw new Error(`Required env var ${name} is not set`);
+  return val;
+}
+
+export const pool = new Pool({
+  host:     process.env.PGHOST     ?? "db",
+  port:     Number(process.env.PGPORT ?? 5432),
+  user:     requireEnv("PGUSER"),
+  password: requireEnv("PGPASSWORD"),
+  database: requireEnv("PGDATABASE"),
+});
+```
+
+---
+
+### 9. Pool connection limit is implicit
+
+**`db.ts:5`**
+
+`pg.Pool` defaults to `max: 10`. In a container where you are the only service that is fine; in a shared environment you may exhaust the DB's `max_connections`. Make the limit explicit and configurable.
+
+```ts
+export const pool = new Pool({
+  ...
+  max: Number(process.env.PGPOOL_MAX ?? 10),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 2_000,
+});
+```
+
+---
+
+### 10. `PORT` env var not validated — `NaN` silently misbehaves
+
+**`index.ts:36`**
+
+```ts
+const port = Number(process.env.PORT ?? 3001);
+```
+
+If `PORT=banana` is set, `Number("banana")` is `NaN` and `app.listen(NaN)` picks an OS-assigned port, not a startup error.
+
+```ts
+const rawPort = process.env.PORT ?? "3001";
+const port = Number(rawPort);
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error(`Invalid PORT: ${rawPort}`);
+}
+```
+
+---
+
+## Minor
+
+### 11. No request logging
+
+**`index.ts`** (not present)
+
+There is no access log. In production you cannot reconstruct what requests were made when investigating incidents.
+
+```ts
+import morgan from "morgan";
+app.use(morgan("combined")); // before routes
+```
+
+---
+
+### 12. `GET /api/users` has no pagination or limit
+
+**`index.ts:17`**
+
+`SELECT ... FROM users ORDER BY id` with no `LIMIT` returns every row. On a large table this will cause slow queries, high memory, and large payloads.
 
 ```ts
 app.get("/api/users", async (_req, res, next) => {
   try {
-    const limit  = Math.min(Number(_req.query.limit)  || 100, 1000);
-    const offset = Math.max(Number(_req.query.offset) || 0,   0);
     const { rows } = await pool.query(
-      "SELECT id, email, created_at FROM users ORDER BY id LIMIT $1 OFFSET $2",
-      [limit, offset]
+      "SELECT id, email, created_at FROM users ORDER BY id LIMIT 100"
     );
     res.json(rows);
   } catch (err) {
@@ -234,40 +290,28 @@ app.get("/api/users", async (_req, res, next) => {
 
 ---
 
-### 12 · Wildcard CORS in non-workshop settings — `index.ts:9`
-**Why it matters:** `Access-Control-Allow-Origin: *` lets any website on the internet make authenticated requests to this API from a visitor's browser. The comment says "during the workshop" but code has a habit of outliving its context.
-
-```ts
-// Make the origin configurable so a production deployment always
-// restricts it without changing code:
-const allowedOrigin = process.env.CORS_ORIGIN ?? "*";
-res.header("Access-Control-Allow-Origin", allowedOrigin);
-```
+`★ Insight ─────────────────────────────────────`
+Issues #1 and #2 are the same root cause: **anything that can emit an `error` event or reject a promise must have an explicit handler**, or Node's default behavior terminates the process. The pattern to remember is: pool events → `.on('error')`, async route handlers → `try/catch` + `next(err)`, startup promises → `.catch(...)`.
+`─────────────────────────────────────────────────`
 
 ---
 
-## Summary table
+**Summary table**
 
-| # | File | Line(s) | Category | Severity |
-|---|------|---------|----------|---------|
-| 1 | `db.ts` | 8–9 | Security / operability | High |
-| 2 | `db.ts` | 5–11 | Performance / operability | High |
-| 3 | `db.ts` | 13–24 | Correctness / operability | High |
-| 4 | `db.ts` | 5–11 | Security | Medium |
-| 5 | `db.ts` / `index.ts` | — | Operability | Medium |
-| 6 | `index.ts` | 16–34 | Correctness / error handling | High |
-| 7 | `index.ts` | 38–42 | Correctness / error handling | High |
-| 8 | `index.ts` | 8–13 | Correctness | High |
-| 9 | `index.ts` | 27 | Input validation / correctness | Medium |
-| 10 | `index.ts` | 36 | Correctness | Medium |
-| 11 | `index.ts` | 17–20 | Performance | Medium |
-| 12 | `index.ts` | 9 | Security | Low (env-gated) |
-
-The two highest-priority items to fix first are **#6** (hanging responses on any DB error) and **#7** (silent startup failure) — they will cause the server to either never start or stop serving without any observable signal.
-
-`★ Insight ─────────────────────────────────────`
-Issues #6 and #7 share the same root cause: Express 4 does not automatically propagate async rejections to error middleware. Express 5 (released 2024) fixes this by wrapping async handlers automatically — upgrading would eliminate the need for most of the try/catch boilerplate, though the `withRetry` `.catch()` on startup (#7) would still be required since it's not inside a route handler.
-`─────────────────────────────────────────────────`
+| # | File | Line | Severity | Category |
+|---|------|------|----------|----------|
+| 1 | index.ts | 17, 25 | Critical | Error handling |
+| 2 | db.ts | — | Critical | Error handling |
+| 3 | index.ts | 27 | Critical | Input validation |
+| 4 | index.ts | 38 | High | Error handling |
+| 5 | db.ts | 13 | High | Correctness |
+| 6 | index.ts | — | High | Operability |
+| 7 | index.ts | 8–13 | High | Security / correctness |
+| 8 | db.ts | 7–10 | Medium | Security / config |
+| 9 | db.ts | 5 | Medium | Performance |
+| 10 | index.ts | 36 | Medium | Correctness |
+| 11 | index.ts | — | Minor | Operability |
+| 12 | index.ts | 17 | Minor | Performance |
 
 ## Diff
 
@@ -279,11 +323,12 @@ Issues #6 and #7 share the same root cause: Express 4 does not automatically pro
 ```json
 {
   "input_tokens": 4,
-  "output_tokens": 5303,
-  "cache_read_input_tokens": 55187,
-  "cache_creation_input_tokens": 18122,
-  "total_tokens": 78616,
-  "cost_usd": 0.16407059999999998,
-  "num_turns": 3
+  "output_tokens": 4604,
+  "cache_read_input_tokens": 55325,
+  "cache_creation_input_tokens": 18280,
+  "total_tokens": 78213,
+  "cost_usd": 0.19534949999999998,
+  "num_turns": 3,
+  "permission_denials": 0
 }
 ```

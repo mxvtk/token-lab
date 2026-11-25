@@ -17,6 +17,16 @@ const notes = [];
 const run = (...a) => execFileSync(claude, a, { encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"] });
 const errText = (e) => String(e.stderr || e.message || e).trim().split("\n").slice(-2).join(" | ");
 
+// Old Claude Code (e.g. 2.0.x) has no `plugin list`, no --json and no --scope, and
+// rejects today's community marketplace schema — nothing below can work there.
+const help = (...a) => { try { return run(...a, "--help"); } catch (e) { return String(e.stdout || ""); } };
+if (!/--available/.test(help("plugin", "list")) || !/--scope/.test(help("plugin", "install"))) {
+  let v = "?";
+  try { v = run("--version").trim().replace(" (Claude Code)", ""); } catch {}
+  if (why) console.error(`      Claude Code ${v} is too old for the plugin commands the eval uses (plugin list --json, install --scope) — run: claude update`);
+  process.exit(2);
+}
+
 let found = false;
 try {
   const mks = JSON.parse(run("plugin", "marketplace", "list", "--json"));
