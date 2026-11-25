@@ -25,7 +25,44 @@ tasks:
       migration and update the seed script to set a name for each seeded user.
     grade: "ALTER TABLE adds name column; seed updated"
 
+  # opt_in: output-heavy (a written review, no edits) — the case output
+  # compression is built for. Not in the default batch; the Caveman A/B runs it
+  # as its own "Caveman (long answer)" row next to the small edit task.
+  - id: 6
+    opt_in: true
+    prompt: >
+      Review the API code in api/src/ (index.ts and db.ts) as a senior engineer
+      would before production. Do not change any files. For every issue you
+      find — correctness, error handling, security, input validation,
+      performance, operability — give the file:line, explain why it matters,
+      and show the fix as a code snippet. Cover all of them.
+    grade: "No files changed; review lists >=5 distinct issues, each with file:line and a fix"
+
+  # opt_in: a long conversation — six messages in ONE session (each step resumes
+  # the previous one), so every step re-reads everything said and read so far.
+  # Mixes tool-heavy steps (files, logs, psql) with prose answers. The api runs
+  # in docker from a built image, so edits are checked from the diff, not curl.
+  - id: 7
+    opt_in: true
+    allow: Bash(docker compose logs:*), Bash(psql:*), Bash(git diff:*), Bash(git status:*)
+    steps:
+      - Read every file in api/src and web/src and explain how the app fits
+        together - request flow from the React page to Postgres.
+      - Run `docker compose logs api --tail 200` and summarise what the API has
+        been doing and any errors or warnings.
+      - Using psql (postgresql://tokenlab:tokenlab@localhost:5432/tokenlab), show
+        the users table schema and its rows, and point out anything odd in the data.
+      - Add a GET /api/health endpoint to the Express API that returns
+        {"status":"ok"} with HTTP 200.
+      - Make GET /api/users/:id return HTTP 400 with an error message when the id
+        is not a positive integer.
+      - Review your changes with git diff and write a pull request description
+        for them - summary, changes, and how to test.
+    grade: "/api/health added; non-numeric :id returns 400; only api/ files changed; PR description written"
+
+  # live_only: opens a real PR — never part of the batch A/B; run by hand with --task 5.
   - id: 5
+    live_only: true
     prompt: >
       Open a GitHub PR titled "health check" containing the /api/health
       endpoint change. Use the gh CLI.

@@ -7,10 +7,14 @@
   "scripts": {
     "eval": "tsx eval/run.ts",
     "scoreboard": "tsx eval/scoreboard.ts",
-    "preflight": "bash preflight.sh"
+    "preflight": "bash preflight.sh",
+    "eval:all": "bash eval/run-all.sh",
+    "setup": "bash setup.sh",
+    "deck": "node deck/build-deck.js"
   },
   "devDependencies": {
     "tsx": "^4.16.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "pptxgenjs": "^3.12.0"
   }
 }

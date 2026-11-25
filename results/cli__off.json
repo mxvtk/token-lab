@@ -1,0 +1,52 @@
+{
+  "label": "cli__off",
+  "mode": "cli-vs-mcp",
+  "recorded_at": "2026-11-25T10:05:02.170Z",
+  "rows": [
+    {
+      "task": 1,
+      "reps": 3,
+      "median_total_tokens": 147822,
+      "min_total_tokens": 147734,
+      "max_total_tokens": 148648,
+      "median_output_tokens": 850,
+      "median_cost_usd": 0.159052,
+      "runs": [
+        {
+          "input_tokens": 8,
+          "output_tokens": 742,
+          "cache_read_input_tokens": 128773,
+          "cache_creation_input_tokens": 18211,
+          "total_tokens": 147734,
+          "cost_usd": 0.1590519,
+          "num_turns": 4
+        },
+        {
+          "input_tokens": 8,
+          "output_tokens": 960,
+          "cache_read_input_tokens": 128694,
+          "cache_creation_input_tokens": 18160,
+          "total_tokens": 147822,
+          "cost_usd": 0.12113220000000001,
+          "num_turns": 4
+        },
+        {
+          "input_tokens": 8,
+          "output_tokens": 850,
+          "cache_read_input_tokens": 129315,
+          "cache_creation_input_tokens": 18475,
+          "total_tokens": 148648,
+          "cost_usd": 0.1624185,
+          "num_turns": 4
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "total_tokens": 147822,
+    "min_total_tokens": 147734,
+    "max_total_tokens": 148648,
+    "output_tokens": 850,
+    "cost_usd": 0.159052
+  }
+}

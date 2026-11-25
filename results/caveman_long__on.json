@@ -1,0 +1,52 @@
+{
+  "label": "caveman_long__on",
+  "mode": "caveman-plugin",
+  "recorded_at": "2026-11-25T10:13:18.797Z",
+  "rows": [
+    {
+      "task": 6,
+      "reps": 3,
+      "median_total_tokens": 82344,
+      "min_total_tokens": 80871,
+      "max_total_tokens": 82820,
+      "median_output_tokens": 4056,
+      "median_cost_usd": 0.201404,
+      "runs": [
+        {
+          "input_tokens": 4,
+          "output_tokens": 4056,
+          "cache_read_input_tokens": 57746,
+          "cache_creation_input_tokens": 20538,
+          "total_tokens": 82344,
+          "cost_usd": 0.20140380000000002,
+          "num_turns": 3
+        },
+        {
+          "input_tokens": 4,
+          "output_tokens": 2561,
+          "cache_read_input_tokens": 57758,
+          "cache_creation_input_tokens": 20548,
+          "total_tokens": 80871,
+          "cost_usd": 0.1790424,
+          "num_turns": 3
+        },
+        {
+          "input_tokens": 4,
+          "output_tokens": 4508,
+          "cache_read_input_tokens": 57758,
+          "cache_creation_input_tokens": 20550,
+          "total_tokens": 82820,
+          "cost_usd": 0.2082594,
+          "num_turns": 3
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "total_tokens": 82344,
+    "min_total_tokens": 80871,
+    "max_total_tokens": 82820,
+    "output_tokens": 4056,
+    "cost_usd": 0.201404
+  }
+}
