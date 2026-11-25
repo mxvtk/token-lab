@@ -80,6 +80,162 @@
       "notes": "WHAT IT DOES: OFF = only the GitHub and Postgres MCP servers loaded (--strict-mcp-config, so nobody's own servers leak in). ON = no MCP servers; the agent uses gh and psql through Bash.\n\nMEASURED (facilitator run, Sonnet, n=3 per side; tokens = median, $ = measured tokens at list price):\n• Edit (task 1): 132,571 → 132,711 tokens (0%, within noise), turns 4 → 4, $0.14 → $0.13 at list price (0%).\n• Review (task 6): 70,442 → 68,821 tokens (−2%, within noise), turns 3 → 3, $0.17 → $0.15 at list price (−11%).\n• Chat (task 7): 617,198 → 657,085 tokens (+6%, within noise), turns 19 → 20, $0.42 → $0.43 at list price (+3%).\n\nWHY IT DOES OR DOESN'T WORK: Current Claude Code defers MCP tool schemas (ToolSearch): only tool names sit in the prompt, and a full schema loads only when the agent asks for it. With both servers loaded, input per request changed by −63 on the edit, +118 on the review, −374 on the chat (median per run), at most 1.2% of a request. That is not thousands of schema tokens, and it is smaller than the rep-to-rep spread, so the sign isn't meaningful.\n\nDOES IT COMPOUND AS CONVERSATIONS GROW? Barely, on this setup. The tool list is part of every request's prefix, so whatever it costs is paid (tokens × requests), read from cache at 0.1× input. Scaled over the ~19-request chat, the measured per-request difference comes to −7,108 tokens, inside the noise: there is no per-request overhead here large enough to compound. What does grow fast is tool output: every result stays in the context and is re-read on every later request, so a verbose tool call early in a chat is paid ~19 times. A client that doesn't defer schemas pays the full schemas on every request instead; that case isn't measured here.\n\nTAKEAWAY: on current Claude Code an idle MCP server is cheap; MCP vs CLI was within noise on all three tasks. Pick by what returns smaller results: trimmed gh/psql output or a lean MCP tool. Unload servers you don't use.\n\nRule of thumb: anything added to every request costs (tokens × requests) and grows with the chat; anything that removes a request saves that request's whole context, which is largest late in a chat. Cache reads bill at 0.1× input, cache writes at 2×."
     }
   ],
+  "details": [
+    {
+      "n": 1,
+      "name": "Headroom",
+      "eyebrow": "LEVER 1  ·  DETAILED STATS",
+      "title": "Headroom: the numbers",
+      "header": [
+        "Median per run",
+        "Edit (task 1)",
+        "Review (task 6)",
+        "Chat (task 7)"
+      ],
+      "body": [
+        [
+          "Total tokens",
+          "148,416 → 221,101 (+49%)",
+          "78,678 → 79,651 (+1%)",
+          "696,238 → 692,224 (−1%)"
+        ],
+        [
+          "Uncached input",
+          "8 → 10 (+25%)",
+          "4 → 4 (0%)",
+          "29 → 29 (0%)"
+        ],
+        [
+          "Cache read",
+          "128,444 → 199,888 (+56%)",
+          "55,130 → 55,453 (+1%)",
+          "650,799 → 622,706 (−4%)"
+        ],
+        [
+          "Cache write",
+          "18,522 → 19,770 (+7%)",
+          "17,984 → 18,841 (+5%)",
+          "36,591 → 64,875 (+77%)"
+        ],
+        [
+          "Output",
+          "878 → 1,126 (+28%)",
+          "5,407 → 5,353 (−1%)",
+          "5,620 → 4,749 (−15%)"
+        ],
+        [
+          "Model requests",
+          "4 → 6 (+50%)",
+          "3 → 3 (0%)",
+          "19 → 19 (0%)"
+        ],
+        [
+          "$ at list price",
+          "$0.16 → $0.20 (+22%)",
+          "$0.21 → $0.21 (+2%)",
+          "$0.51 → $0.65 (+27%)"
+        ],
+        [
+          "Verdict (tokens)",
+          "overhead",
+          "within noise",
+          "within noise"
+        ]
+      ],
+      "verdictColor": [
+        "FF3D57",
+        "A8A9C0",
+        "A8A9C0"
+      ],
+      "side": {
+        "head": "What the proxy reports (ON runs)",
+        "lines": [
+          "Edit (task 1): 19 requests, 1,628 of 123,714 input tokens saved (1.3%), 0 cache busts.",
+          "Review (task 6): 11 requests, 453 of 50,799 input tokens saved (0.9%), 0 cache busts.",
+          "Chat (task 7): 45 requests, 23,945 of 862,695 input tokens saved (2.8%), 0 cache busts.",
+          "The proxy counted 18% / 19% / 42% of the input-side tokens the API billed for the same runs, so its \"saved\" is a share of a smaller base."
+        ]
+      },
+      "footer": "OFF → ON (change), median of each side's runs, so the parts don't sum to the total. $ prices the measured tokens at list price per MTok: input $3, cache read $0.30, cache write $6, output $15. Verdict: \"within noise\" = OFF and ON ranges overlap."
+    },
+    {
+      "n": 2,
+      "name": "Caveman",
+      "eyebrow": "LEVER 2  ·  DETAILED STATS",
+      "title": "Caveman: the numbers",
+      "header": [
+        "Median per run",
+        "Edit (task 1)",
+        "Review (task 6)",
+        "Chat (task 7)"
+      ],
+      "body": [
+        [
+          "Total tokens",
+          "148,586 → 158,357 (+7%)",
+          "78,479 → 82,344 (+5%)",
+          "785,964 → 821,363 (+5%)"
+        ],
+        [
+          "Uncached input",
+          "8 → 8 (0%)",
+          "4 → 4 (0%)",
+          "31 → 31 (0%)"
+        ],
+        [
+          "Cache read",
+          "129,196 → 136,747 (+6%)",
+          "55,169 → 57,758 (+5%)",
+          "744,971 → 781,401 (+5%)"
+        ],
+        [
+          "Cache write",
+          "18,541 → 20,976 (+13%)",
+          "18,089 → 20,548 (+14%)",
+          "35,661 → 36,804 (+3%)"
+        ],
+        [
+          "Output",
+          "847 → 619 (−27%)",
+          "5,348 → 4,056 (−24%)",
+          "5,735 → 4,344 (−24%)"
+        ],
+        [
+          "Model requests",
+          "4 → 4 (0%)",
+          "3 → 3 (0%)",
+          "21 → 21 (0%)"
+        ],
+        [
+          "$ at list price",
+          "$0.16 → $0.18 (+8%)",
+          "$0.20 → $0.20 (−2%)",
+          "$0.55 → $0.52 (−7%)"
+        ],
+        [
+          "Verdict (tokens)",
+          "overhead",
+          "within noise",
+          "within noise"
+        ]
+      ],
+      "verdictColor": [
+        "FF3D57",
+        "A8A9C0",
+        "A8A9C0"
+      ],
+      "side": {
+        "head": "Output saved vs input added",
+        "lines": [
+          "Edit (task 1): output −228, input side +9,985 per run.",
+          "Review (task 6): output −1,292, input side +5,048 per run.",
+          "Chat (task 7): output −1,391, input side +37,371 per run.",
+          "Output is 0.6% / 3.8% / 0.7% of all tokens (OFF). An output token costs 50× a cache read, so $ can drop while tokens rise."
+        ]
+      },
+      "footer": "OFF → ON (change), median of each side's runs, so the parts don't sum to the total. $ prices the measured tokens at list price per MTok: input $3, cache read $0.30, cache write $6, output $15. Verdict: \"within noise\" = OFF and ON ranges overlap."
+    }
+  ],
   "scoreboard": {
     "rows": [
       {

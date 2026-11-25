@@ -60,7 +60,9 @@ function runStats(label) {
     total: d.totals.total_tokens, out: med("output_tokens"), turns: med("num_turns"), cost: med("cost_usd"), costOk,
     cacheShare: sum("cache_read_input_tokens") / sum("total_tokens"), outShare: sum("output_tokens") / sum("total_tokens"),
     // per-run medians, for per-request arithmetic in the speaker notes
-    m: { input: medOf(inSide), perReq: medOf((r) => inSide(r) / r.num_turns), cacheWrite: medOf((r) => r.cache_creation_input_tokens), output: medOf((r) => r.output_tokens), turns: med("num_turns") },
+    m: { input: medOf(inSide), perReq: medOf((r) => inSide(r) / r.num_turns), cacheWrite: medOf((r) => r.cache_creation_input_tokens), output: medOf((r) => r.output_tokens), turns: med("num_turns"),
+      uncached: medOf((r) => r.input_tokens), cacheRead: medOf((r) => r.cache_read_input_tokens) },
+    sumInSide: runs.reduce((a, r) => a + inSide(r), 0), reps: runs.length,
     // list price of the median run, with caching (as billed) and without (every input-side token at the input rate)
     caching: { withCache: medOf(price), noCache: medOf(priceNoCache), recorded: costOk ? sum("cost_usd") / runs.length : null },
   };
@@ -450,15 +452,100 @@ const NOTES = {};
   ].join("\n\n");
 }
 
-// ========== S6-9 LEVERS ==========
+// ---- per-lever detail slides: OFF → ON per task, every cell computed from results/ ----
+// Headroom's own counters, from results/<label>.headroom-metrics.txt (Prometheus text, a
+// /metrics snapshot before and after the run). The counters are cumulative across runs,
+// so each figure is after − before. null when the file is missing.
+function proxyMetrics(label) {
+  try {
+    const t = fs.readFileSync(nodePath.join(__dirname, "..", "results", `${label}.headroom-metrics.txt`), "utf8");
+    const [before, after] = t.split("# /metrics after");
+    if (after == null) return null;
+    const val = (s, name) => { const m = s.match(new RegExp(`^${name} ([\\d.e+]+)$`, "m")); return m ? Number(m[1]) : 0; };
+    const d = (name) => val(after, name) - val(before, name);
+    return { requests: d("headroom_requests_total"), input: d("headroom_tokens_input_total"), saved: d("headroom_tokens_saved_total"),
+      busts: d("headroom_cache_bust_total"), bustLost: d("headroom_cache_bust_tokens_lost_total") };
+  } catch { return null; }
+}
+const DETAILS = [];
+const DETAIL_TASKS = [["", "Edit (task 1)"], ["_long", "Review (task 6)"], ["_chain", "Chat (task 7)"]];
+const arrow = (a, b, f) => `${f(a)} → ${f(b)} (${a ? chg(a, b) : "—"})`;
+function detailRows(key) {
+  const rows = DETAIL_TASKS.map(([sfx, name]) => noteRow(key + sfx, name));
+  const col = (fn) => rows.map((r) => (r.ok ? fn(r) : "—"));
+  return {
+    rows,
+    header: ["Median per run", ...rows.map((r) => r.name)],
+    body: [
+      ["Total tokens", ...col((r) => arrow(r.off.total, r.on.total, tok))],
+      ["Uncached input", ...col((r) => arrow(r.off.m.uncached, r.on.m.uncached, tok))],
+      ["Cache read", ...col((r) => arrow(r.off.m.cacheRead, r.on.m.cacheRead, tok))],
+      ["Cache write", ...col((r) => arrow(r.off.m.cacheWrite, r.on.m.cacheWrite, tok))],
+      ["Output", ...col((r) => arrow(r.off.m.output, r.on.m.output, tok))],
+      ["Model requests", ...col((r) => arrow(r.off.m.turns, r.on.m.turns, (x) => String(x)))],
+      ["$ at list price", ...col((r) => arrow(r.off.caching.withCache, r.on.caching.withCache, usd2))],
+      ["Verdict (tokens)", ...col((r) => r.verdict)],
+    ],
+    verdictColor: rows.map((r) => (!r.ok ? MUTE : r.verdict === "saves" ? GREEN : r.verdict === "overhead" ? RED : MUTE)),
+  };
+}
+const DETAIL_FOOT = `OFF → ON (change), median of each side's runs, so the parts don't sum to the total. $ prices the measured tokens at list price per MTok: `
+  + `input $${PRICE.input}, cache read $${PRICE.cacheRead.toFixed(2)}, cache write $${PRICE.cacheWrite}, output $${PRICE.output}. Verdict: "within noise" = OFF and ON ranges overlap.`;
+function detailSlide(n, name, color, key, side) {
+  const t = detailRows(key);
+  const d = { n, name, eyebrow: `LEVER ${n}  ·  DETAILED STATS`, title: `${name}: the numbers`, header: t.header, body: t.body, verdictColor: t.verdictColor, side, footer: DETAIL_FOOT };
+  DETAILS.push(d);
+  const s = p.addSlide(); bg(s);
+  leverBadge(s, M, 0.7, n, color);
+  s.addText(d.eyebrow, { x: M + 1.15, y: 0.72, w: 8, h: 0.3, fontFace: HEAD, fontSize: 12, color, bold: true, charSpacing: 2, isTextBox: true, margin: 0 });
+  s.addText(d.title, { x: M + 1.15, y: 1.0, w: 10, h: 0.7, fontFace: HEAD, fontSize: 32, color: WHITE, bold: true, isTextBox: true, margin: 0 });
+  const colW = [1.9, 2.2, 2.2, 2.2];
+  const cellOpt = (i, c) => ({ fontFace: c === 0 || i === 0 ? HEAD : BODY, fontSize: 10.5, bold: c === 0 || i === 0, valign: "middle", margin: [0, 6, 0, 6],
+    color: i === 0 ? MUTE : c === 0 ? WHITE : i === t.body.length ? t.verdictColor[c - 1] : MUTE, fill: { color: i % 2 === 1 ? CARD : BG } });
+  const rows = [t.header, ...t.body].map((r, i) => r.map((text, c) => ({ text, options: cellOpt(i, c) })));
+  s.addTable(rows, { x: M, y: 2.0, w: colW.reduce((a, b) => a + b), colW, rowH: 0.42, border: { type: "none" } });
+  card(s, 9.45, 2.0, W - M - 9.45, 3.78);
+  s.addText(side.head, { x: 9.65, y: 2.15, w: W - M - 9.85, h: 0.4, fontFace: HEAD, fontSize: 13, color, bold: true, isTextBox: true, margin: 0 });
+  s.addText(side.lines.map((l, i) => ({ text: l, options: { breakLine: i < side.lines.length - 1, paraSpaceAfter: 8 } })),
+    { x: 9.65, y: 2.6, w: W - M - 9.85, h: 3.05, fontFace: BODY, fontSize: 11, color: WHITE, valign: "top", isTextBox: true, margin: 0, lineSpacingMultiple: 1.05 });
+  s.addText(d.footer, { x: M, y: 6.05, w: 11.9, h: 0.55, fontFace: BODY, fontSize: 10, color: MUTE, isTextBox: true, margin: 0 });
+  wordmark(s, W - 2.9, H - 0.55);
+}
+// Headroom side card: what the proxy itself counted on the ON runs, next to what the API billed
+const HEADROOM_SIDE = (() => {
+  const lines = [];
+  const seen = [];
+  DETAIL_TASKS.forEach(([sfx, name]) => {
+    const pm = proxyMetrics(`headroom${sfx}__on`), on = runStats(`headroom${sfx}__on`);
+    if (!pm || !on || !pm.input) { lines.push(`${name}: ${NOT_YET}.`); return; }
+    lines.push(`${name}: ${tok(pm.requests)} requests, ${tok(pm.saved)} of ${tok(pm.input)} input tokens saved (${pct1(pm.saved / pm.input)}), ${tok(pm.busts)} cache busts.`);
+    seen.push(pct1(pm.input / on.sumInSide));
+  });
+  if (seen.length) lines.push(`The proxy counted ${seen.join(" / ")} of the input-side tokens the API billed for the same runs, so its "saved" is a share of a smaller base.`);
+  return { head: "What the proxy reports (ON runs)", lines };
+})();
+// Caveman side card: output saved vs input added, per run
+const CAVEMAN_SIDE = (() => {
+  const rows = DETAIL_TASKS.map(([sfx, name]) => noteRow(`caveman${sfx}`, name));
+  const lines = rows.map((r) => (r.ok
+    ? `${r.name}: output ${signedTok(r.on.m.output - r.off.m.output)}, input side ${signedTok(r.on.m.input - r.off.m.input)} per run.`
+    : `${r.name}: ${NOT_YET}.`));
+  const ok = rows.filter((r) => r.ok);
+  if (ok.length) lines.push(`Output is ${ok.map((r) => pct1(r.off.outShare)).join(" / ")} of all tokens (OFF). An output token costs ${times(RATE.outVsRead)} a cache read, so $ can drop while tokens rise.`);
+  return { head: "Output saved vs input added", lines };
+})();
+
+// ========== S6-9 LEVERS (each of the first two followed by its detail slide) ==========
 leverSlide(1, "Headroom", PURPLE, "Demo",
   "A drop-in proxy that compresses tool outputs, logs and JSON before they reach the model — the bulky inputs coding agents rack up.",
   ["Run Claude Code through it: 'headroom wrap' — zero code changes", "Compresses tool / assistant messages; your prompts are untouched", "'headroom dashboard' shows live token savings", "Open source: headroomlabs-ai/headroom"],
   "Vendor's own benchmark: ~20% for coding agents, 60-95% for JSON. We measure our own.", NOTES.headroom);
+detailSlide(1, "Headroom", PURPLE, "headroom", HEADROOM_SIDE);
 leverSlide(2, "Caveman plugin", PURPLE_L, "Demo",
   "Compress the model's output and reasoning verbosity — same technical accuracy, far fewer words.",
   ["Enable the plugin; re-run a task", "Eyeball before / after: same result, shorter answers", "Savings land on the output line only — check the total too"],
   "Attacks: verbose model output. Its own ruleset is extra context on every turn.", NOTES.caveman);
+detailSlide(2, "Caveman", PURPLE_L, "caveman", CAVEMAN_SIDE);
 leverSlide(3, "Config", GREEN, "Hands-on",
   "A tight project config stops the agent re-discovering the repo every session. Lowest effort — measure what it saves on your repo.",
   ["Write a lean CLAUDE.md: commands, conventions, where things live", "Deny reads of generated output, fixtures, lockfiles (permissions.deny — Claude Code ignores .claudeignore)", "The agent stops paying the 're-learn the repo' tax"],
@@ -483,7 +570,7 @@ let ry = 2.4;
 const scMeta = [];
 // Every computed string the two results slides render, written to slide-text.json so
 // the Google Slides copy of the deck is filled from the same computation (no retyping).
-const EXPORT = { overview: levers.map(([n, name, line, mode]) => ({ n, name, line, mode })), levers: LEVERS, scoreboard: { rows: [], footnote: "" }, findings: [] };
+const EXPORT = { overview: levers.map(([n, name, line, mode]) => ({ n, name, line, mode })), levers: LEVERS, details: DETAILS, scoreboard: { rows: [], footnote: "" }, findings: [] };
 scCell(scX + 0.15, ry, scW * cols[0], "Optimization", MUTE, true);
 scCell(scX + scW * cols[0], ry, scW * cols[1], "Before (off)", MUTE, true);
 scCell(scX + scW * (cols[0] + cols[1]), ry, scW * cols[2], "After (on)", MUTE, true);
