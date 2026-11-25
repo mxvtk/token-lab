@@ -4,7 +4,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 const DIR = process.env.RESULTS_DIR
   || (existsSync("results/local") && readdirSync("results/local").some((f) => f.endsWith(".json")) ? "results/local" : "results");
 console.log(`reading ${DIR}/`);
-const keys = ["headroom", "headroom_long", "headroom_chain", "caveman", "caveman_long", "caveman_chain", "config", "cli"];
+const keys = ["headroom", "headroom_long", "headroom_chain", "caveman", "caveman_long", "caveman_chain", "config", "cli", "cli_long", "cli_chain"];
 const med = (a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2); };
 let spent = 0;
 for (const k of keys) {

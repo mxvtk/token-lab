@@ -383,10 +383,17 @@ elif command -v gh >/dev/null 2>&1 && command -v psql >/dev/null 2>&1; then
   "postgres": { "command": "npx", "args": ["-y","@modelcontextprotocol/server-postgres","postgresql://tokenlab:tokenlab@localhost:5432/tokenlab"] }
 } }
 JSON
+  # --long adds cli_long (task 6) and cli_chain (task 7). Task 7 names psql in its
+  # prompt, so those rows measure what loading the MCP servers costs over a long
+  # session, not which tool the agent picks.
   sub "OFF (control) — GitHub/Postgres MCP servers connected"
   EVAL_MODE=cli-vs-mcp EVAL_MCP_CONFIG="$CLI_MCP" ev cli__off
+  EVAL_MODE=cli-vs-mcp EVAL_MCP_CONFIG="$CLI_MCP" evt "$LONG_TASK" cli_long__off
+  EVAL_MODE=cli-vs-mcp EVAL_MCP_CONFIG="$CLI_MCP" evt "$CHAIN_TASK" cli_chain__off
   sub "ON — no MCP; agent uses gh + psql"
   EVAL_MODE=cli-vs-mcp ev cli__on
+  EVAL_MODE=cli-vs-mcp evt "$LONG_TASK" cli_long__on
+  EVAL_MODE=cli-vs-mcp evt "$CHAIN_TASK" cli_chain__on
   rm -f "$CLI_MCP"; trap - EXIT
 else
   skip "CLI-vs-MCP" "gh and/or psql not installed (run ./setup.sh)"

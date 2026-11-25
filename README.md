@@ -144,9 +144,13 @@ Adds **task 6** (one long written code review) and **task 7** (a six-message cha
 session: reads files, logs and psql, then edits and writes a PR description):
 ```bash
 npm run eval:all -- --only headroom --long --task 1
+npm run eval:all -- --only cli --long --task 1       # CLI vs MCP on all three tasks
 npm run eval:all -- --long --task 1                  # everything
 npm run eval:all -- --only caveman --rows caveman_chain   # a single row
 ```
+For CLI vs MCP, task 7 tells the agent to use psql, so the long rows show what having the
+MCP servers loaded costs over a long session, not which tool the agent picks. These rows
+have no facilitator numbers or cost figure yet.
 
 #### Try Headroom at home
 The workshop only demos Headroom. To measure it yourself:
@@ -179,7 +183,10 @@ npm run scoreboard                 # reads results/local/ once it has runs, else
 node scripts/results-summary.mjs   # every OFF/ON pair: tokens, range, output, cache reads, turns, $
 RESULTS_DIR=results npm run scoreboard   # the facilitator baseline
 ```
-Overlapping OFF/ON ranges print as **within noise** — that is a result, not a failure.
+Each row gets a verdict: **▼ saves** or **▲ overhead** when ON used fewer or more tokens
+and the OFF and ON ranges don't overlap, **≈ within noise** when they overlap (a result,
+not a failure), and **? unclear** with only 1 rep on a side (no range to judge). The lines
+under the table group the rows by verdict.
 
 #### 7. Send back to the facilitator
 1. The full terminal output of `eval:all` — especially every `✗` line, verbatim.
@@ -218,7 +225,7 @@ With `--with-headroom`, Headroom is installed with `uv tool install --python 3.1
 `HEADROOM_BIN` to use another copy.
 
 No savings number is claimed in advance — every figure comes from a real run.
-`npm run scoreboard` shows `—` for any A/B that has no OFF+ON pair yet.
+`npm run scoreboard` lists any A/B that has no OFF+ON pair yet under **Not run**.
 
 ### Scoreboard
 `results/<opt>__off.json` / `__on.json` hold the facilitator's measured runs (each with its
