@@ -66,17 +66,32 @@ step "4. Caveman plugin (compresses the model's output)"
 # Source: Anthropic's public community marketplace (anthropics/claude-plugins-community,
 # marketplace name "claude-community"), which pins upstream JuliusBrussee/caveman.
 CAVEMAN_ID="${CAVEMAN_PLUGIN:-caveman@claude-community}"
-cv_avail() { claude plugin list --json --available 2>/dev/null | grep -q "\"$CAVEMAN_ID\""; }
+cv_avail() { node scripts/caveman-avail.mjs "$CAVEMAN_ID" "$@"; }
+CV_ADD_LOG=/tmp/token-lab-caveman-marketplace.log
+: > "$CV_ADD_LOG"
 if ! cv_avail && [ "$CAVEMAN_ID" = caveman@claude-community ]; then
-  claude plugin marketplace add anthropics/claude-plugins-community >/dev/null 2>&1 \
-    && ok "added Anthropic community marketplace (claude-community)"
+  if claude plugin marketplace list --json 2>/dev/null | grep -q '"claude-community"'; then
+    # Configured but caveman missing from it: the local copy is stale.
+    claude plugin marketplace update claude-community >>"$CV_ADD_LOG" 2>&1 \
+      && ok "updated Anthropic community marketplace (claude-community)"
+  else
+    # Shorthand clones over SSH first; the HTTPS URL is the fallback for machines without a GitHub SSH key.
+    for src in anthropics/claude-plugins-community https://github.com/anthropics/claude-plugins-community.git; do
+      echo "\$ claude plugin marketplace add $src" >>"$CV_ADD_LOG"
+      claude plugin marketplace add "$src" >>"$CV_ADD_LOG" 2>&1 \
+        && { ok "added Anthropic community marketplace (claude-community) from $src"; break; }
+    done
+  fi
 fi
 if cv_avail; then
   ok "$CAVEMAN_ID available — the eval enables it for this repo only"
 elif claude plugin list --json 2>/dev/null | grep -q "\"caveman@"; then
   ok "caveman already installed"
 else
-  warn "$CAVEMAN_ID not found — run: claude plugin marketplace add anthropics/claude-plugins-community"
+  warn "$CAVEMAN_ID not found ($(claude --version 2>/dev/null | head -1)):"
+  cv_avail --why
+  [ -s "$CV_ADD_LOG" ] && { warn "marketplace add/update said (full log: $CV_ADD_LOG):"; tail -6 "$CV_ADD_LOG" | sed 's/^/      /'; }
+  warn "by hand: claude plugin marketplace add https://github.com/anthropics/claude-plugins-community.git"
 fi
 
 step "5. CLI tools for the CLI-vs-MCP phase (gh + psql)"

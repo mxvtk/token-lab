@@ -253,9 +253,7 @@ cv_state() {   # prints: absent | enabled | disabled
     console.log(hits.length === 0 ? "absent" : hits.some((p) => p.enabled) ? "enabled" : "disabled");
   ' "$CAVEMAN_ID" 2>/dev/null || echo absent
 }
-cv_available() {
-  "$CLAUDE_BIN" plugin list --json --available 2>/dev/null | grep -q "\"$CAVEMAN_ID\""
-}
+cv_available() { node scripts/caveman-avail.mjs "$CAVEMAN_ID" "$@"; }   # uses $CLAUDE_BIN
 CV_FLAG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.caveman-active"   # rewritten by caveman's SessionStart hook
 cv_stamp() { [ -e "$CV_FLAG" ] && stat -f %m "$CV_FLAG" 2>/dev/null || stat -c %Y "$CV_FLAG" 2>/dev/null || echo 0; }
 
@@ -301,7 +299,8 @@ elif [ "$CV_WAS" != absent ] || cv_available; then
 
   cv_restore; trap - EXIT
 else
-  skip "Caveman" "$CAVEMAN_ID not installed or available — run: claude plugin marketplace add anthropics/claude-plugins-community"
+  skip "Caveman" "$CAVEMAN_ID not installed or available — run ./setup.sh (it adds the claude-community marketplace and says why if it can't)"
+  cv_available --why
 fi
 
 # ---------- Config A/B : no project config vs tight CLAUDE.md + permissions.deny ----------

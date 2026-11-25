@@ -73,7 +73,8 @@ to send back to the facilitator.
 - **Caveman plugin:** [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman), installed as
   `caveman@claude-community` from Anthropic's public community marketplace
   ([anthropics/claude-plugins-community](https://github.com/anthropics/claude-plugins-community)).
-  `setup.sh` adds the marketplace; by hand: `claude plugin marketplace add anthropics/claude-plugins-community`.
+  `setup.sh` adds the marketplace (HTTPS fallback if the SSH clone fails) and, if caveman still
+  isn't available, prints why. By hand: `claude plugin marketplace add https://github.com/anthropics/claude-plugins-community.git`.
   Not `caveman@anthropic-plugin-directory` — that is a different plugin with the same name.
 
 #### 1. Get the repo and set up
