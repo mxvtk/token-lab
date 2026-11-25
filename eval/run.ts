@@ -17,6 +17,10 @@
  *   EVAL_MODE        how the A/B toggle was applied; stored as `mode` in the results.
  *   EVAL_MCP_CONFIG  extra MCP config passed with --mcp-config; every server in it
  *                    must report "connected" or the run is refused.
+ *   EVAL_STRICT_MCP  1 = pass --strict-mcp-config, so only EVAL_MCP_CONFIG's servers
+ *                    load (none without it). Any other server that still connects
+ *                    (e.g. one a wrapper adds) is warned about and recorded as
+ *                    extra_mcp_servers.
  *   EVAL_CLAUDE_SETTINGS  extra settings JSON passed with --settings (run-all.sh
  *                    uses it to point a Bedrock-mode claude at the Headroom proxy:
  *                    settings.json `env` wins over the shell env, so exporting
@@ -42,6 +46,8 @@ const APP_DIRS = ["api", "web", "db"].filter((d) => existsSync(join(ROOT, d)));
 const CLAUDE_BIN = (process.env.CLAUDE_BIN || "claude").replace(/^~(?=\/)/, homedir());
 const MCP_CONFIG = process.env.EVAL_MCP_CONFIG || "";
 const EXTRA_SETTINGS = process.env.EVAL_CLAUDE_SETTINGS || "";
+const STRICT_MCP = process.env.EVAL_STRICT_MCP === "1";
+const extraServers = new Set<string>(); // servers that loaded despite STRICT_MCP
 const MODEL = "sonnet";
 // Your runs go to results/local/ (gitignored); results/ holds the facilitator's
 // baseline that the deck is built from. RESULTS_DIR=results writes the baseline.
@@ -204,6 +210,7 @@ function claudeCall(prompt: string, resume?: string, allow: string[] = []): any 
       ...(allow.length ? ["--allowedTools", ...allow] : []),
       // Extra MCP servers for the CLI-vs-MCP control side (see run-all.sh).
       ...(MCP_CONFIG ? ["--mcp-config", MCP_CONFIG] : []),
+      ...(STRICT_MCP ? ["--strict-mcp-config"] : []),
       ...(EXTRA_SETTINGS ? ["--settings", EXTRA_SETTINGS] : []),
     ],
     { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }
@@ -212,10 +219,10 @@ function claudeCall(prompt: string, resume?: string, allow: string[] = []): any 
     throw new Error(`claude exited ${res.status} with no output: ${res.stderr}`);
   }
   const r = resultEvent(res.stdout);
-  if (MCP_CONFIG) {
+  if (MCP_CONFIG || STRICT_MCP) {
     // A server that never connects adds no tools — the "MCP on" side would
     // silently equal "MCP off". Refuse the run instead.
-    const wanted = Object.keys(JSON.parse(readFileSync(MCP_CONFIG, "utf8")).mcpServers ?? {});
+    const wanted = MCP_CONFIG ? Object.keys(JSON.parse(readFileSync(MCP_CONFIG, "utf8")).mcpServers ?? {}) : [];
     const events = [].concat(JSON.parse(res.stdout));
     const init: any = events.find((e: any) => e && e.type === "system" && e.subtype === "init");
     if (!init) {
@@ -225,6 +232,13 @@ function claudeCall(prompt: string, resume?: string, allow: string[] = []): any 
     const bad = wanted.filter((n) => status.get(n) !== "connected");
     if (bad.length) {
       throw new Error(`MCP servers not connected: ${bad.map((n) => `${n}=${status.get(n) ?? "missing"}`).join(", ")}`);
+    }
+    if (STRICT_MCP) {
+      for (const name of status.keys()) {
+        if (wanted.includes(name as string) || extraServers.has(name as string)) continue;
+        extraServers.add(name as string);
+        process.stdout.write(`  ! MCP server "${name}" loaded despite --strict-mcp-config (added by a wrapper?); recorded as extra_mcp_servers\n`);
+      }
     }
   }
   if (r.is_error) {
@@ -381,7 +395,7 @@ function main() {
       // the deck can say what was actually measured. Not `note` — that marks placeholders.
       // cost_accounting: "session-delta" = cost_usd is per step (see runTask). Files
       // without it predate that fix; their multi-step costs are overcounted.
-      { label, mode: process.env.EVAL_MODE || undefined, model: MODEL, claude_version: claudeVersion(), cost_accounting: "session-delta", recorded_at: new Date().toISOString(), rows, totals },
+      { label, mode: process.env.EVAL_MODE || undefined, model: MODEL, claude_version: claudeVersion(), cost_accounting: "session-delta", extra_mcp_servers: extraServers.size ? [...extraServers] : undefined, recorded_at: new Date().toISOString(), rows, totals },
       null,
       2
     ) + "\n"

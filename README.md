@@ -43,7 +43,8 @@ npm run eval:all -- --long     # also the long-answer (task 6) and long-chat (ta
 ```
 `eval:all` flips each optimization automatically — Headroom proxy passthrough/optimizing,
 `caveman` plugin disable/enable (this repo only), `CLAUDE.md` + `permissions.deny` absent/present,
-GitHub/Postgres MCP servers on/off (passed with `--mcp-config`, your global config untouched) —
+GitHub/Postgres MCP servers on/off (passed with `--mcp-config` plus `--strict-mcp-config`, so your own
+MCP servers load on neither side; your global config is untouched) —
 runs the same task each side, and writes `results/local/<opt>__off.json` / `__on.json`
 (`RESULTS_DIR=…` to change; `results/` itself is the facilitator baseline). It
 **refuses to run** (rather than record zeros) if `claude` isn't logged in, and refuses to
@@ -104,7 +105,7 @@ each switch itself, then prints the scoreboard:
 | Headroom | proxy `--mode token --no-optimize` | proxy optimizing | `headroom proxy requests during …: N → M, pipeline ran on K` |
 | Caveman | plugin disabled (this repo only) | plugin enabled (this repo only) | `caveman hook fired during ON (flag file refreshed)` |
 | Config | no `CLAUDE.md`, no project `.claude/settings.json` | `config/CLAUDE.md.after` + `config/settings.json.after` (`permissions.deny`) | `## Denied by permissions` in a rep's `.md` when a deny rule fired |
-| CLI vs MCP | GitHub + Postgres MCP servers connected | no MCP, agent uses `gh` + `psql` | run refused if a server isn't `connected` |
+| CLI vs MCP | only the GitHub + Postgres MCP servers | no MCP servers, agent uses `gh` + `psql` | run refused if a server isn't `connected`; `! MCP server … loaded despite --strict-mcp-config` if a wrapper added one |
 
 **About the Config number in the deck.** It comes from `results/config__off.json` →
 `results/config__on.json`: **task 1 only, n=3 per side**, median 147,398 → 111,548 tokens,
